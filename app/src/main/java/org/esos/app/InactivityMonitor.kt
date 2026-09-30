@@ -16,12 +16,55 @@ import android.os.IBinder
 import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
+import java.time.Duration
+import java.time.Instant
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 object InactivityTimes {
+    const val DEFAULT_SLEEP_START_MINUTE = 23 * 60
+    const val DEFAULT_SLEEP_END_MINUTE = 8 * 60
     private const val HOUR_MILLIS = 60 * 60 * 1000L
 
-    fun deadline(lockedSince: Long, durationHours: Int): Long =
-        lockedSince + durationHours.coerceIn(1, 72) * HOUR_MILLIS
+    fun deadline(
+        lockedSince: Long,
+        durationHours: Int,
+        sleepStartMinute: Int = DEFAULT_SLEEP_START_MINUTE,
+        sleepEndMinute: Int = DEFAULT_SLEEP_END_MINUTE,
+        zoneId: ZoneId = ZoneId.systemDefault()
+    ): Long {
+        var remaining = durationHours.coerceIn(1, 72) * HOUR_MILLIS
+        val startMinute = sleepStartMinute.coerceIn(0, 1439)
+        val endMinute = sleepEndMinute.coerceIn(0, 1439)
+        if (startMinute == endMinute) return lockedSince + remaining
+
+        val sleepStart = LocalTime.of(startMinute / 60, startMinute % 60)
+        val sleepEnd = LocalTime.of(endMinute / 60, endMinute % 60)
+        var cursor = Instant.ofEpochMilli(lockedSince)
+        while (true) {
+            val currentDate = cursor.atZone(zoneId).toLocalDate()
+            val (windowStart, windowEnd) = (-1L..1L)
+                .map { offset ->
+                    val startDate: LocalDate = currentDate.plusDays(offset)
+                    val endDate = if (endMinute <= startMinute) startDate.plusDays(1) else startDate
+                    ZonedDateTime.of(startDate, sleepStart, zoneId).toInstant() to
+                        ZonedDateTime.of(endDate, sleepEnd, zoneId).toInstant()
+                }
+                .filter { (_, end) -> end.isAfter(cursor) }
+                .minBy { (start, _) -> start }
+
+            if (!cursor.isBefore(windowStart) && cursor.isBefore(windowEnd)) {
+                cursor = windowEnd
+            } else {
+                val awakeBeforeSleep = Duration.between(cursor, windowStart).toMillis()
+                if (remaining <= awakeBeforeSleep) return cursor.plusMillis(remaining).toEpochMilli()
+                remaining -= awakeBeforeSleep
+                cursor = windowEnd
+            }
+        }
+    }
 }
 
 object InactivityMonitor {
@@ -72,23 +115,23 @@ object InactivityMonitor {
         val pending = pending(app)
         alarm.cancel(pending)
         if (!settings.inactivityEnabled || settings.inactivityTriggered || settings.inactivityLockedSince <= 0L) return
-        val deadline = InactivityTimes.deadline(settings.inactivityLockedSince, settings.inactivityHours)
+        val deadline = InactivityTimes.deadline(settings.inactivityLockedSince, settings.inactivityHours,
+            settings.inactivitySleepStartMinute, settings.inactivitySleepEndMinute)
         alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, deadline, pending)
     }
 
     fun handleDeadline(context: Context) {
         val settings = AppSettings(context)
         if (!settings.inactivityEnabled || settings.inactivityTriggered || settings.inactivityLockedSince <= 0L) return
-        val deadline = InactivityTimes.deadline(settings.inactivityLockedSince, settings.inactivityHours)
+        val deadline = InactivityTimes.deadline(settings.inactivityLockedSince, settings.inactivityHours,
+            settings.inactivitySleepStartMinute, settings.inactivitySleepEndMinute)
         if (System.currentTimeMillis() < deadline) {
             schedule(context)
             return
         }
         settings.inactivityTriggered = true
         cancel(context)
-        if (!AlertRuntime.start(context, AlertReason.INACTIVITY)) {
-            settings.smsStatus = "SOS door langdurige inactiviteit kon niet starten; controleer de SMS-instellingen."
-        }
+        AlertRuntime.start(context, AlertReason.INACTIVITY)
     }
 
     private fun cancel(context: Context) {

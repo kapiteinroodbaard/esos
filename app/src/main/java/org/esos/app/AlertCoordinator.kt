@@ -18,9 +18,9 @@ interface AlertSender {
 
 enum class AlertState { IDLE, COUNTDOWN, SENT, CANCELLED, ERROR }
 enum class AlertReason(val countdownMillis: Long) {
-    SOS(10_000L),
+    SOS(60_000L),
     SPEECH_DETECTED(60_000L),
-    MISSED_CHECK_IN(10_000L),
+    MISSED_CHECK_IN(60_000L),
     INACTIVITY(60_000L),
     FALL(60_000L)
 }
@@ -35,8 +35,7 @@ object AlertMessageFormatter {
 class AlertCoordinator(
     private val sender: AlertSender,
     private val location: IncidentLocation,
-    private val now: () -> Long,
-    private val address: () -> String = { "" }
+    private val now: () -> Long
 ) {
     var state = AlertState.IDLE
         private set
@@ -112,10 +111,9 @@ class AlertCoordinator(
                 AlertReason.INACTIVITY -> "SOS: telefoon niet ontgrendeld binnen de ingestelde tijd."
                 AlertReason.FALL -> "SOS: val gedetecteerd; mogelijk hulp nodig."
             }
-            val home = address().trim().takeIf { it.isNotEmpty() }?.let { " Huisadres: $it." } ?: ""
             val gps = fix?.takeIf { it.usable(time) }?.let { " ${formatFix(it)}" } ?: ""
             try {
-                sender.send(incidentId, base + home + gps)
+                sender.send(incidentId, base + gps)
             } catch (_: RuntimeException) {
                 state = AlertState.ERROR
                 locationRequest?.cancel()

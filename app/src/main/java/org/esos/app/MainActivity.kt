@@ -76,7 +76,6 @@ class MainActivity : ComponentActivity() {
         var setupComplete by remember { mutableStateOf(settings.setupComplete) }
         var setupStep by remember { mutableIntStateOf(0) }
         var contacts by remember { mutableStateOf(settings.contacts) }
-        var address by remember { mutableStateOf(settings.homeAddress) }
         var selectedSim by remember { mutableIntStateOf(settings.simId) }
         var shareGps by remember { mutableStateOf(settings.shareLocation) }
         var wakePhrases by remember { mutableStateOf(settings.wakePhrases) }
@@ -89,9 +88,9 @@ class MainActivity : ComponentActivity() {
         var fallDetail by remember { mutableStateOf(FallDetectionStatus.detail) }
         var inactivityEnabled by remember { mutableStateOf(settings.inactivityEnabled) }
         var inactivityHours by remember { mutableIntStateOf(settings.inactivityHours) }
-        var status by remember { mutableStateOf(settings.smsStatus) }
+        var inactivitySleepStartMinute by remember { mutableIntStateOf(settings.inactivitySleepStartMinute) }
+        var inactivitySleepEndMinute by remember { mutableIntStateOf(settings.inactivitySleepEndMinute) }
         var message by remember { mutableStateOf("") }
-        var showSmsTest by remember { mutableStateOf(false) }
         var remaining by remember { mutableIntStateOf(0) }
         var activeState by remember { mutableStateOf(AlertRuntime.state()) }
         var sosModeActive by remember { mutableStateOf(settings.sosModeActive) }
@@ -157,7 +156,7 @@ class MainActivity : ComponentActivity() {
             settings.fallDetectionEnabled = true
             try {
                 FallDetectionService.start(this@MainActivity)
-                message = "Valdetectie ingeschakeld."
+                message = ""
             } catch (_: RuntimeException) {
                 fallDetectionOn = false
                 settings.fallDetectionEnabled = false
@@ -175,7 +174,6 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(permissionVersion, permissionRefresh) {
             while (true) {
-                status = settings.smsStatus
                 remaining = AlertRuntime.remainingSeconds()
                 activeState = AlertRuntime.state()
                 sosModeActive = settings.sosModeActive
@@ -201,6 +199,13 @@ class MainActivity : ComponentActivity() {
         val subscriptions = if (phoneAllowed) try {
             getSystemService(SubscriptionManager::class.java).activeSubscriptionInfoList.orEmpty()
         } catch (_: SecurityException) { emptyList() } else emptyList()
+        val singleSimId = subscriptions.singleOrNull()?.subscriptionId
+        LaunchedEffect(singleSimId) {
+            if (singleSimId != null) {
+                selectedSim = singleSimId
+                settings.simId = singleSimId
+            }
+        }
         val basePermissionsGranted = phoneAllowed && smsAllowed && notificationsAllowed && microphoneAllowed && fineAllowed
         val allPermissionsGranted = basePermissionsGranted && backgroundAllowed
         val allSetupRequirementsMet = allPermissionsGranted && !backgroundRestricted &&
@@ -237,18 +242,6 @@ class MainActivity : ComponentActivity() {
         val openBatterySaverSettings = {
             startActivity(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))
         }
-
-        if (showSmsTest) AlertDialog(onDismissRequest = { showSmsTest = false },
-            title = { Text("Echte SMS-test versturen?") },
-            text = { Text("Dit kost mogelijk geld en stuurt nu een echt testbericht naar: ${contacts.joinToString { it.name + " (" + it.number + ")" }}.") },
-            confirmButton = { TextButton(onClick = {
-                showSmsTest = false
-                try {
-                    SmsAlertSender(this, settings).send(System.currentTimeMillis(), "e-SOS TEST: dit is een afgesproken testbericht, geen alarm.")
-                    message = "Testbericht aangeboden; controleer resultaat en bevestig ontvangst bij contact."
-                } catch (_: RuntimeException) { message = "Testbericht mislukt. Controleer contact, SIM en machtigingen." }
-            }) { Text("Verstuur test-SMS") } },
-            dismissButton = { TextButton(onClick = { showSmsTest = false }) { Text("Annuleer") } })
 
         if (!setupComplete) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)
@@ -315,7 +308,8 @@ class MainActivity : ComponentActivity() {
                     }
                     1 -> {
                         Text("Contacten en SIM", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("Voeg een bereikbaar noodcontact toe en kies de SIM voor alarm-SMS.")
+                        Text(if (singleSimId != null) "Voeg een bereikbaar noodcontact toe."
+                            else "Voeg een bereikbaar noodcontact toe en kies de SIM voor alarm-SMS.")
                         contacts.forEach { contact ->
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Text("${contact.name}: ${contact.number}", modifier = Modifier.weight(1f))
@@ -342,16 +336,18 @@ class MainActivity : ComponentActivity() {
                                 message = "Contact opgeslagen."
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
-                        Text("SIM voor alarm-SMS", fontWeight = FontWeight.Bold)
-                        if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
-                        subscriptions.forEach { subscription ->
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = selectedSim == subscription.subscriptionId,
-                                    onClick = {
-                                        selectedSim = subscription.subscriptionId
-                                        settings.simId = selectedSim
-                                    })
-                                Text("SIM ${subscription.simSlotIndex + 1}: ${subscription.displayName}")
+                        if (subscriptions.size != 1) {
+                            Text("SIM voor alarm-SMS", fontWeight = FontWeight.Bold)
+                            if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
+                            subscriptions.forEach { subscription ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = selectedSim == subscription.subscriptionId,
+                                        onClick = {
+                                            selectedSim = subscription.subscriptionId
+                                            settings.simId = selectedSim
+                                        })
+                                    Text("SIM ${subscription.simSlotIndex + 1}: ${subscription.displayName}")
+                                }
                             }
                         }
                         if (message.isNotBlank()) Text(message)
@@ -363,13 +359,9 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth()) { Text("Verder") }
                     }
                     else -> {
-                        Text("Controle en test", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("Machtigingen, contact en SIM zijn ingesteld. De app kan nu een test-SMS versturen.")
-                        Text("Een test-SMS is een echt bericht en kan kosten opleveren.")
+                        Text("Controle", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Text("Machtigingen, contact en SIM zijn ingesteld.")
                         if (message.isNotBlank()) Text(message)
-                        OutlinedButton(onClick = { showSmsTest = true },
-                            enabled = SmsAlertSender(this@MainActivity, settings).ready(),
-                            modifier = Modifier.fillMaxWidth()) { Text("Stuur test-SMS...") }
                         Button(onClick = {
                             settings.setupComplete = true
                             setupComplete = true
@@ -386,12 +378,12 @@ class MainActivity : ComponentActivity() {
         val voiceDetectionOn = listeningState == ListeningState.LISTENING ||
             listeningState == ListeningState.STARTING || listeningState == ListeningState.PAUSED
         val startManualSos: () -> Unit = {
-            val started = AlertRuntime.start(this@MainActivity, AlertReason.SOS)
+            val started = AlertRuntime.startManual(this@MainActivity, AlertReason.SOS)
             sosModeActive = settings.sosModeActive
             message = when {
                 !started -> "Alarm niet gestart: controleer SMS-instellingen onder Acties."
-                !smsEnabled -> "Alarm gestart; SMS staat uit en er wordt geen bericht verzonden."
-                else -> "Alarm gestart; echte SOS-berichten worden na 10 seconden verstuurd."
+                !smsEnabled -> "SOS gestart; SMS staat uit en er wordt geen bericht verzonden."
+                else -> "SOS gestart; alarmberichten worden direct verstuurd."
             }
         }
 
@@ -585,7 +577,6 @@ class MainActivity : ComponentActivity() {
                                 })
                             }
                             if (fallDetectionOn) {
-                                Text(fallDetail, style = MaterialTheme.typography.bodySmall)
                                 Text("Gevoeligheid: $fallSensitivity / 5", fontWeight = FontWeight.SemiBold)
                                 Slider(value = fallSensitivity.toFloat(), onValueChange = { value ->
                                     fallSensitivity = value.toInt()
@@ -600,7 +591,7 @@ class MainActivity : ComponentActivity() {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("Inactiviteitsbewaking", fontWeight = FontWeight.SemiBold)
-                                    Text("Een ontgrendeling geldt als teken dat je beschikbaar bent.",
+                                    Text("Een ontgrendeling van het apparaat geldt als teken van leven.",
                                         style = MaterialTheme.typography.bodySmall)
                                 }
                                 Switch(checked = inactivityEnabled, onCheckedChange = { enabled ->
@@ -636,11 +627,32 @@ class MainActivity : ComponentActivity() {
                                         Text("1 uur", style = MaterialTheme.typography.bodySmall)
                                         Text("72 uur", style = MaterialTheme.typography.bodySmall)
                                     }
+                                    Text("Slaaptijd (niet meetellen)", fontWeight = FontWeight.SemiBold)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(onClick = {
+                                            TimePickerDialog(this@MainActivity, { _, hour, minute ->
+                                                inactivitySleepStartMinute = hour * 60 + minute
+                                                settings.inactivitySleepStartMinute = inactivitySleepStartMinute
+                                                InactivityMonitor.schedule(this@MainActivity)
+                                            }, inactivitySleepStartMinute / 60, inactivitySleepStartMinute % 60, true).show()
+                                        }, modifier = Modifier.weight(1f)) {
+                                            Text("Vanaf ${formatClockTime(inactivitySleepStartMinute)}")
+                                        }
+                                        OutlinedButton(onClick = {
+                                            TimePickerDialog(this@MainActivity, { _, hour, minute ->
+                                                inactivitySleepEndMinute = hour * 60 + minute
+                                                settings.inactivitySleepEndMinute = inactivitySleepEndMinute
+                                                InactivityMonitor.schedule(this@MainActivity)
+                                            }, inactivitySleepEndMinute / 60, inactivitySleepEndMinute % 60, true).show()
+                                        }, modifier = Modifier.weight(1f)) {
+                                            Text("Tot ${formatClockTime(inactivitySleepEndMinute)}")
+                                        }
+                                    }
+                                    Text(if (inactivitySleepStartMinute == inactivitySleepEndMinute)
+                                        "Slaaptijd is uitgeschakeld."
+                                    else "Deze uren tellen niet mee voor de inactiviteitsduur.",
+                                        style = MaterialTheme.typography.bodySmall)
                                 }
-                            }
-                            if (!smsEnabled && inactivityEnabled) {
-                                Text("SMS staat uit; bij een alarm klinkt alleen het lokale alarmsignaal.",
-                                    style = MaterialTheme.typography.bodySmall)
                             }
                             HorizontalDivider()
                             if (activeState == AlertState.COUNTDOWN) {
@@ -667,7 +679,7 @@ class MainActivity : ComponentActivity() {
                                     message = when {
                                         !started -> "SOS-test niet gestart: controleer SMS-instellingen of er is al een alarm actief."
                                         !smsEnabled -> "SOS-test gestart; de SMS-actie staat uit, dus er wordt geen bericht verzonden."
-                                        else -> "SOS-test gestart; testberichten worden na 10 seconden verstuurd."
+                                        else -> "SOS-test gestart; testberichten worden direct verstuurd."
                                     }
                                 }, modifier = Modifier.fillMaxWidth()) { Text("Start SOS-test") }
                             }
@@ -728,23 +740,22 @@ class MainActivity : ComponentActivity() {
                                             message = "Contact opgeslagen."
                                         }
                                     }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
-                                    OutlinedTextField(address, { address = it }, label = { Text("Huisadres (optioneel)") },
-                                        modifier = Modifier.fillMaxWidth())
-                                    Text("SIM voor alarm-SMS", fontWeight = FontWeight.SemiBold)
-                                    if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
-                                    subscriptions.forEach { subscription ->
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            RadioButton(selected = selectedSim == subscription.subscriptionId, onClick = {
-                                                selectedSim = subscription.subscriptionId
-                                                settings.simId = selectedSim
-                                            })
-                                            Text("SIM ${subscription.simSlotIndex + 1}: ${subscription.displayName}")
+                                    if (subscriptions.size != 1) {
+                                        Text("SIM voor alarm-SMS", fontWeight = FontWeight.SemiBold)
+                                        if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
+                                        subscriptions.forEach { subscription ->
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(selected = selectedSim == subscription.subscriptionId, onClick = {
+                                                    selectedSim = subscription.subscriptionId
+                                                    settings.simId = selectedSim
+                                                })
+                                                Text("SIM ${subscription.simSlotIndex + 1}: ${subscription.displayName}")
+                                            }
                                         }
                                     }
                                     Button(onClick = {
-                                        settings.homeAddress = address
                                         settings.simId = selectedSim
-                                        message = "SIM en adres opgeslagen."
+                                        message = "SMS-instellingen opgeslagen."
                                     }, modifier = Modifier.fillMaxWidth()) { Text("Bewaar SMS-instellingen") }
                                     if (!smsAllowed) {
                                         Text("SMS-toestemming is nodig om berichten te versturen.", color = Color(0xFFC62828))
@@ -752,9 +763,6 @@ class MainActivity : ComponentActivity() {
                                             permissions.launch(arrayOf(Manifest.permission.SEND_SMS))
                                         }) { Text("Vraag SMS-toestemming") }
                                     }
-                                    OutlinedButton(onClick = { showSmsTest = true }, enabled = smsReady,
-                                        modifier = Modifier.fillMaxWidth()) { Text("Test-SMS versturen") }
-                                    Text(status)
                                 }
                             }
                             HorizontalDivider()
@@ -866,6 +874,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun formatClockTime(minutesSinceMidnight: Int): String {
+    val hours = minutesSinceMidnight / 60
+    val minutes = minutesSinceMidnight % 60
+    return "${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}"
+}
+
 @Composable
 private fun HoldToConfirmSos(
     countdown: Boolean,
@@ -931,6 +945,11 @@ private fun HoldToConfirmSos(
                 },
             contentAlignment = Alignment.Center
         ) {
+            Box(
+                modifier = Modifier.fillMaxHeight().fillMaxWidth(progress.value)
+                    .background(Color(0xFFD94A45), RoundedCornerShape(8.dp))
+                    .align(Alignment.CenterStart)
+            )
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -938,12 +957,6 @@ private fun HoldToConfirmSos(
             ) {
                 Text("SOS", fontSize = 32.sp, fontWeight = FontWeight.Bold)
                 Text(if (isPressed) "Vasthouden: ${(3 - (progress.value * 3).toInt()).coerceIn(1, 3)} s" else "3 seconden ingedrukt houden")
-                LinearProgressIndicator(
-                    progress = { progress.value },
-                    modifier = Modifier.fillMaxWidth().height(6.dp),
-                    color = Color.White,
-                    trackColor = Color.White.copy(alpha = 0.3f)
-                )
             }
         }
     }

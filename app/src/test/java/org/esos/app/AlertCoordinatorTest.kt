@@ -30,29 +30,53 @@ class AlertCoordinatorTest {
             AlertMessageFormatter.cancellation(true))
     }
 
-    @Test fun safetyTriggersUseOneMinuteCountdown() {
+    @Test fun appTriggersUseOneMinuteCountdown() {
+        val messages = mutableListOf<String>()
         val sender = object : AlertSender {
-            override fun send(incidentId: Long, text: String) {}
+            override fun send(incidentId: Long, text: String) { messages.add(text) }
         }
         val location = object : IncidentLocation {
             override fun request(onFix: (GpsFix) -> Unit) = object : LocationRequest {
                 override fun cancel() {}
             }
         }
-        listOf(AlertReason.SPEECH_DETECTED, AlertReason.INACTIVITY, AlertReason.FALL).forEach { reason ->
+        listOf(AlertReason.SOS, AlertReason.SPEECH_DETECTED, AlertReason.MISSED_CHECK_IN,
+            AlertReason.INACTIVITY, AlertReason.FALL).forEach { reason ->
+            val startedAt = time
             val alarm = AlertCoordinator(sender, location, { time })
             assertTrue(alarm.start(reason))
-            assertEquals(time + 60_000L, alarm.deadline)
+            assertEquals(startedAt + 60_000L, alarm.deadline)
+            time = startedAt + 10_000L
+            alarm.tick()
+            assertEquals(AlertState.COUNTDOWN, alarm.state)
+            assertTrue(messages.isEmpty())
+            time = startedAt + 59_999L
+            alarm.tick()
+            assertEquals(AlertState.COUNTDOWN, alarm.state)
+            assertTrue(messages.isEmpty())
+            time = startedAt + 60_000L
+            alarm.tick()
+            assertEquals(AlertState.SENT, alarm.state)
+            assertEquals(1, messages.size)
+            messages.clear()
         }
-        val manualAlarm = AlertCoordinator(sender, location, { time })
-        assertTrue(manualAlarm.start(AlertReason.SOS))
-        assertEquals(time + 10_000L, manualAlarm.deadline)
+    }
+
+    @Test fun manualSosCanStartWithoutCountdown() {
+        val manualAlarm = AlertCoordinator(object : AlertSender {
+            override fun send(incidentId: Long, text: String) { messages.add(text) }
+        }, location, { time })
+        assertTrue(manualAlarm.start(AlertReason.SOS, 0L))
+        assertEquals(time, manualAlarm.deadline)
+        manualAlarm.tick()
+        assertEquals(AlertState.SENT, manualAlarm.state)
+        assertEquals(1, messages.size)
     }
 
     @Test fun sendsWithoutGpsAtDeadlineAndOnlyOneTimelySupplement() {
         assertTrue(coordinator.start(AlertReason.SOS))
         assertFalse(coordinator.start(AlertReason.SOS))
-        time += 10_000
+        time += 60_000
         coordinator.tick()
         assertEquals(1, messages.size)
         assertFalse(messages[0].contains("GPS:"))
@@ -68,10 +92,11 @@ class AlertCoordinatorTest {
         callback!!(GpsFix(51.0, 4.0, 20f, time))
         coordinator.tick()
         assertTrue(messages.isEmpty())
+        assertEquals(AlertState.CANCELLED, coordinator.state)
     }
 
     @Test fun staleFixCannotDelayOrSupplement() {
-        coordinator.start(AlertReason.SOS)
+        coordinator.start(AlertReason.SOS, 10_000L)
         callback!!(GpsFix(51.0, 4.0, 20f, 1))
         time += 10_000
         coordinator.tick()
@@ -81,7 +106,7 @@ class AlertCoordinatorTest {
     }
 
     @Test fun inaccurateFixIsIgnoredButFreshAccurateFixIsIncluded() {
-        coordinator.start(AlertReason.SOS)
+        coordinator.start(AlertReason.SOS, 10_000L)
         callback!!(GpsFix(51.0, 4.0, 200f, time))
         callback!!(GpsFix(52.0, 5.0, 20f, time))
         time += 10_000
@@ -101,7 +126,7 @@ class AlertCoordinatorTest {
             }
         }, { time })
         assertTrue(fallback.start(AlertReason.MISSED_CHECK_IN))
-        time += 10_000
+        time += 60_000
         fallback.tick()
         assertEquals(1, messages.size)
         assertTrue(messages.single().contains("geen dagelijkse bevestiging"))

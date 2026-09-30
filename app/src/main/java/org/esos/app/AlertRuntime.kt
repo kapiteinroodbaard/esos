@@ -17,11 +17,14 @@ object AlertRuntime {
     private var coordinator: AlertCoordinator? = null
     private val handler = Handler(Looper.getMainLooper())
 
-    fun start(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, false)
+    fun start(context: Context, reason: AlertReason): Boolean =
+        startInternal(context, reason, false, reason.countdownMillis)
 
-    fun startManualTest(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, true)
+    fun startManual(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, false, 0L)
 
-    private fun startInternal(context: Context, reason: AlertReason, isTest: Boolean): Boolean {
+    fun startManualTest(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, true, 0L)
+
+    private fun startInternal(context: Context, reason: AlertReason, isTest: Boolean, countdownMillis: Long): Boolean {
         val app = context.applicationContext
         val settings = AppSettings(app)
         val sms = SmsAlertSender(app, settings)
@@ -29,11 +32,12 @@ object AlertRuntime {
         if (settings.smsEnabled && !sms.ready()) return false
         val sender = senderFor(settings, sms, isTest)
         coordinator?.reset()
-        val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis) { settings.homeAddress }
+        val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis)
         coordinator = alarm
-        if (!alarm.start(reason)) return false
-        if (!isTest) settings.sosModeActive = true
-        if (!isTest) AlertAudioPlayer.play(app, *announcementAudio(reason))
+        if (!alarm.start(reason, countdownMillis)) return false
+        if (!isTest && countdownMillis > 0L) {
+            countdownAnnouncement(reason)?.let { AlertAudioPlayer.play(app, it) }
+        }
         app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong("deadline", alarm.deadline).putString("reason", reason.name)
             .putBoolean("manualTest", isTest).commit()
@@ -51,15 +55,14 @@ object AlertRuntime {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val hasPendingAlarm = prefs.contains("deadline")
         val cancelledCountdown = coordinator?.cancel() == true
-        if (!cancelledCountdown && !settings.sosModeActive && !hasPendingAlarm) return false
-        AlertAudioPlayer.play(context, R.raw.noodprocedure_geannuleerd)
-        if (settings.smsEnabled) {
+        val sosWasActive = settings.sosModeActive
+        if (!cancelledCountdown && !sosWasActive && !hasPendingAlarm) return false
+        if (sosWasActive) AlertAudioPlayer.play(context, R.raw.noodprocedure_geannuleerd)
+        if (sosWasActive && settings.smsEnabled) {
             val isTest = prefs.getBoolean("manualTest", false)
             val incidentId = coordinator?.incidentId?.takeIf { it > 0L } ?: System.currentTimeMillis()
-            try {
+            runCatching {
                 SmsAlertSender(context, settings).send(incidentId, AlertMessageFormatter.cancellation(isTest))
-            } catch (_: RuntimeException) {
-                settings.smsStatus = "SOS geannuleerd, maar de annulerings-SMS is niet verzonden. Controleer contact, SIM en machtigingen."
             }
         }
         settings.sosModeActive = false
@@ -69,11 +72,11 @@ object AlertRuntime {
         return true
     }
 
-    private fun announcementAudio(reason: AlertReason): IntArray = when (reason) {
-        AlertReason.SPEECH_DETECTED -> intArrayOf(R.raw.hulproep_gedetecteerd, R.raw.noodprocedure_gestart)
-        AlertReason.INACTIVITY -> intArrayOf(R.raw.inactiviteitswaarschuwing, R.raw.noodprocedure_gestart)
-        AlertReason.FALL -> intArrayOf(R.raw.val_detectie, R.raw.noodprocedure_gestart)
-        AlertReason.SOS, AlertReason.MISSED_CHECK_IN -> intArrayOf(R.raw.noodprocedure_gestart)
+    private fun countdownAnnouncement(reason: AlertReason): Int? = when (reason) {
+        AlertReason.SPEECH_DETECTED -> R.raw.hulproep_gedetecteerd
+        AlertReason.INACTIVITY -> R.raw.inactiviteitswaarschuwing
+        AlertReason.FALL -> R.raw.val_detectie
+        AlertReason.SOS, AlertReason.MISSED_CHECK_IN -> null
     }
 
     fun state(): AlertState = coordinator?.state ?: AlertState.IDLE
@@ -97,24 +100,29 @@ object AlertRuntime {
         val active = coordinator
         if (active?.state == AlertState.COUNTDOWN) {
             active.tick()
-            if (active.state == AlertState.ERROR) AppSettings(context).smsStatus = "SMS niet verzonden: controleer SIM en machtigingen"
+            if (active.state == AlertState.SENT || active.state == AlertState.ERROR) {
+                enterSosPhase(context, isTest)
+            }
         } else {
             val settings = AppSettings(context)
             val sms = SmsAlertSender(context, settings)
-            if (settings.smsEnabled && !sms.ready()) {
-                settings.smsStatus = "Alarm na herstel niet verzonden: controleer SIM en machtigingen"
-                return
-            }
-            val recovered = AlertCoordinator(senderFor(settings, sms, isTest), AndroidIncidentLocation(context, settings), System::currentTimeMillis) {
-                settings.homeAddress
-            }
+            if (settings.smsEnabled && !sms.ready()) return
+            val recovered = AlertCoordinator(senderFor(settings, sms, isTest), AndroidIncidentLocation(context, settings), System::currentTimeMillis)
             coordinator = recovered
             recovered.start(reason, 0L)
             recovered.tick()
-            if (recovered.state == AlertState.ERROR) settings.smsStatus = "SMS niet verzonden: controleer SIM en machtigingen"
+            if (recovered.state == AlertState.SENT || recovered.state == AlertState.ERROR) {
+                enterSosPhase(context, isTest)
+            }
             handler.postDelayed({ recovered.tick(); recovered.reset() }, 20_001L)
         }
         notificationManager(context).cancel(101)
+    }
+
+    private fun enterSosPhase(context: Context, isTest: Boolean) {
+        if (isTest) return
+        AppSettings(context).sosModeActive = true
+        AlertAudioPlayer.play(context, R.raw.noodprocedure_gestart)
     }
 
     private fun fallback(context: Context) = PendingIntent.getBroadcast(context, 12,
@@ -124,7 +132,6 @@ object AlertRuntime {
     private fun senderFor(settings: AppSettings, sms: SmsAlertSender, isTest: Boolean): AlertSender = object : AlertSender {
         override fun send(incidentId: Long, text: String) {
             if (settings.smsEnabled) sms.send(incidentId, AlertMessageFormatter.format(isTest, text))
-            else settings.smsStatus = "SMS uitgeschakeld; alarm niet per SMS verstuurd"
         }
     }
 

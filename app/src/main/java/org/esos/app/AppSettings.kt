@@ -10,6 +10,12 @@ data class FamilyContact(val name: String, val number: String)
 class AppSettings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    init {
+        if (prefs.contains("address") || prefs.contains("smsStatus")) {
+            prefs.edit().remove("address").remove("smsStatus").apply()
+        }
+    }
+
     var contacts: List<FamilyContact>
         get() = runCatching {
             val entries = JSONArray(prefs.getString("contacts", "[]"))
@@ -29,9 +35,6 @@ class AppSettings(context: Context) {
     var setupComplete: Boolean
         get() = prefs.getBoolean("setupComplete", false)
         set(value) { prefs.edit().putBoolean("setupComplete", value).apply() }
-    var homeAddress: String
-        get() = prefs.getString("address", "") ?: ""
-        set(value) { prefs.edit().putString("address", value.trim()).apply() }
     var simId: Int
         get() = prefs.getInt("sim", -1)
         set(value) { prefs.edit().putInt("sim", value).apply() }
@@ -72,13 +75,16 @@ class AppSettings(context: Context) {
     var inactivityHours: Int
         get() = prefs.getInt("inactivityHours", 24).coerceIn(1, 72)
         set(value) { prefs.edit().putInt("inactivityHours", value.coerceIn(1, 72)).apply() }
+    var inactivitySleepStartMinute: Int
+        get() = prefs.getInt("inactivitySleepStartMinute", InactivityTimes.DEFAULT_SLEEP_START_MINUTE).coerceIn(0, 1439)
+        set(value) { prefs.edit().putInt("inactivitySleepStartMinute", value.coerceIn(0, 1439)).apply() }
+    var inactivitySleepEndMinute: Int
+        get() = prefs.getInt("inactivitySleepEndMinute", InactivityTimes.DEFAULT_SLEEP_END_MINUTE).coerceIn(0, 1439)
+        set(value) { prefs.edit().putInt("inactivitySleepEndMinute", value.coerceIn(0, 1439)).apply() }
     var inactivityLockedSince: Long
         get() = prefs.getLong("inactivityLockedSince", 0L)
         set(value) { prefs.edit().putLong("inactivityLockedSince", value).apply() }
     var inactivityTriggered: Boolean
         get() = prefs.getBoolean("inactivityTriggered", false)
         set(value) { prefs.edit().putBoolean("inactivityTriggered", value).apply() }
-    var smsStatus: String
-        get() = prefs.getString("smsStatus", "Nog geen SMS-resultaat") ?: ""
-        set(value) { prefs.edit().putString("smsStatus", value).apply() }
 }

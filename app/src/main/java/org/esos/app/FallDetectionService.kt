@@ -81,7 +81,7 @@ class FallDetectionService : Service(), SensorEventListener {
             if (AlertRuntime.state() != AlertState.COUNTDOWN && AlertRuntime.state() != AlertState.SENT) {
                 val started = AlertRuntime.start(this, AlertReason.FALL)
                 FallDetectionStatus.update(true, if (started)
-                    "Val gedetecteerd; SOS-alarm gestart" else "Val gedetecteerd; SOS-alarm kon niet starten, controleer Acties")
+                    "Val gedetecteerd; SOS-countdown gestart" else "Val gedetecteerd; SOS-alarm kon niet starten, controleer Acties")
             }
         }
     }

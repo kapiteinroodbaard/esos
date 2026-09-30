@@ -240,6 +240,7 @@ class ListeningService : Service() {
         const val START = "org.esos.app.START_LISTENING"
         const val STOP = "org.esos.app.STOP_LISTENING"
         private const val CHANNEL = "listening"
+        private const val BOOT_CHANNEL = "listening_boot"
         private const val NOTIFICATION_ID = 103
         private const val BOOT_NOTIFICATION_ID = 105
         private const val SAMPLE_RATE = 16_000
@@ -249,13 +250,13 @@ class ListeningService : Service() {
             val notifications = context.getSystemService(NotificationManager::class.java)
             if (!notifications.areNotificationsEnabled()) return
             notifications.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Spraakdetectie", NotificationManager.IMPORTANCE_LOW))
+                NotificationChannel(BOOT_CHANNEL, "Spraakdetectie hervatten", NotificationManager.IMPORTANCE_LOW))
             val startIntent = PendingIntent.getForegroundService(context, 32,
                 Intent(context, ListeningService::class.java).setAction(START),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val openAppIntent = PendingIntent.getActivity(context, 33, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            notifications.notify(BOOT_NOTIFICATION_ID, Notification.Builder(context, CHANNEL)
+            notifications.notify(BOOT_NOTIFICATION_ID, Notification.Builder(context, BOOT_CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("Spraakdetectie staat uit")
                 .setContentText("Tik op Starten om de spraakdetectie te hervatten.")

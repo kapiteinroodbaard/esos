@@ -29,7 +29,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <receiver android:name=".SmsResultReceiver" android:exported="false" />
         <receiver android:name=".CancelAlertReceiver" android:exported="false" />
         <receiver android:name=".AlarmDeadlineReceiver" android:exported="false" />
         <receiver android:name=".CheckInReceiver" android:exported="false" />
