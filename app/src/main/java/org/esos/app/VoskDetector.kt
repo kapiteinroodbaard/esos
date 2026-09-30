@@ -1,5 +1,6 @@
 package org.esos.app
 
+import org.json.JSONArray
 import org.json.JSONObject
 import org.vosk.LibVosk
 import org.vosk.LogLevel
@@ -9,7 +10,8 @@ import java.io.File
 
 class VoskDetector(
     dutchDirectory: File,
-    private val matcher: PhraseMatcher = PhraseMatcher(),
+    wakePhrases: List<String> = WakePhrases.DEFAULTS,
+    private val matcher: PhraseMatcher = PhraseMatcher(phrases = wakePhrases),
     private val now: () -> Long = System::currentTimeMillis
 ) : OfflineDetector {
     private val dutch: Model
@@ -19,7 +21,10 @@ class VoskDetector(
         LibVosk.setLogLevel(LogLevel.WARNINGS)
         dutch = Model(dutchDirectory.absolutePath)
         try {
-            dutchRecognizer = Recognizer(dutch, 16_000f, """["help mij","ik heb hulp nodig","[unk]"]""")
+            val grammar = JSONArray()
+            WakePhrases.unique(wakePhrases).forEach { grammar.put(WakePhrases.normalize(it)) }
+            grammar.put("[unk]")
+            dutchRecognizer = Recognizer(dutch, 16_000f, grammar.toString())
         } catch (error: Exception) {
             dutch.close()
             throw error

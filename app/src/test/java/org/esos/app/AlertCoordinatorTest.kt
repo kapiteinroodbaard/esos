@@ -24,6 +24,12 @@ class AlertCoordinatorTest {
             AlertMessageFormatter.format(true, message))
     }
 
+    @Test fun cancellationMessageIdentifiesTestMode() {
+        assertEquals("SOS geannuleerd.", AlertMessageFormatter.cancellation(false))
+        assertEquals("e-SOS SOS-TEST (geen echte noodsituatie): SOS geannuleerd.",
+            AlertMessageFormatter.cancellation(true))
+    }
+
     @Test fun sendsWithoutGpsAtDeadlineAndOnlyOneTimelySupplement() {
         assertTrue(coordinator.start(AlertReason.SOS))
         assertFalse(coordinator.start(AlertReason.SOS))

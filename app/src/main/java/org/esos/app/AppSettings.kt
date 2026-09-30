@@ -44,6 +44,22 @@ class AppSettings(context: Context) {
     var speechDetectionEnabled: Boolean
         get() = prefs.getBoolean("speechDetectionEnabled", false)
         set(value) { prefs.edit().putBoolean("speechDetectionEnabled", value).apply() }
+    var wakePhrases: List<String>
+        get() {
+            val stored = prefs.getString("wakePhrases", null) ?: return WakePhrases.DEFAULTS
+            return runCatching {
+                val entries = JSONArray(stored)
+                WakePhrases.unique((0 until entries.length()).map { entries.getString(it) })
+            }.getOrDefault(WakePhrases.DEFAULTS)
+        }
+        set(value) {
+            val entries = JSONArray()
+            WakePhrases.unique(value).forEach(entries::put)
+            prefs.edit().putString("wakePhrases", entries.toString()).apply()
+        }
+    var sosModeActive: Boolean
+        get() = prefs.getBoolean("sosModeActive", false)
+        set(value) { prefs.edit().putBoolean("sosModeActive", value).apply() }
     var fallDetectionEnabled: Boolean
         get() = prefs.getBoolean("fallDetection", false)
         set(value) { prefs.edit().putBoolean("fallDetection", value).apply() }

@@ -19,7 +19,9 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -36,6 +38,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -73,8 +79,10 @@ class MainActivity : ComponentActivity() {
         var address by remember { mutableStateOf(settings.homeAddress) }
         var selectedSim by remember { mutableIntStateOf(settings.simId) }
         var shareGps by remember { mutableStateOf(settings.shareLocation) }
+        var wakePhrases by remember { mutableStateOf(settings.wakePhrases) }
+        var wakePhraseInput by remember { mutableStateOf("") }
         var smsEnabled by remember { mutableStateOf(settings.smsEnabled) }
-        var manualSosTestVisible by remember { mutableStateOf(true) }
+        var manualSosTestVisible by remember { mutableStateOf(false) }
         var fallDetectionOn by remember { mutableStateOf(settings.fallDetectionEnabled) }
         var fallSensitivity by remember { mutableIntStateOf(settings.fallSensitivity) }
         var fallServiceActive by remember { mutableStateOf(FallDetectionStatus.active) }
@@ -86,6 +94,7 @@ class MainActivity : ComponentActivity() {
         var showSmsTest by remember { mutableStateOf(false) }
         var remaining by remember { mutableIntStateOf(0) }
         var activeState by remember { mutableStateOf(AlertRuntime.state()) }
+        var sosModeActive by remember { mutableStateOf(settings.sosModeActive) }
         var listeningState by remember { mutableStateOf(ListeningStatus.state) }
         var listeningDetail by remember { mutableStateOf(ListeningStatus.detail) }
         var permissionRefresh by remember { mutableIntStateOf(0) }
@@ -169,6 +178,7 @@ class MainActivity : ComponentActivity() {
                 status = settings.smsStatus
                 remaining = AlertRuntime.remainingSeconds()
                 activeState = AlertRuntime.state()
+                sosModeActive = settings.sosModeActive
                 listeningState = ListeningStatus.state
                 listeningDetail = ListeningStatus.detail
                 fallServiceActive = FallDetectionStatus.active
@@ -377,6 +387,7 @@ class MainActivity : ComponentActivity() {
             listeningState == ListeningState.STARTING || listeningState == ListeningState.PAUSED
         val startManualSos: () -> Unit = {
             val started = AlertRuntime.start(this@MainActivity, AlertReason.SOS)
+            sosModeActive = settings.sosModeActive
             message = when {
                 !started -> "Alarm niet gestart: controleer SMS-instellingen onder Acties."
                 !smsEnabled -> "Alarm gestart; SMS staat uit en er wordt geen bericht verzonden."
@@ -385,7 +396,9 @@ class MainActivity : ComponentActivity() {
         }
 
         Scaffold(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().border(
+                if (sosModeActive) 8.dp else 0.dp, Color(0xFFFF1010)
+            ),
             bottomBar = {
                 NavigationBar {
                     val tabs = listOf("Dashboard", "Detectie", "Acties", "Instellingen")
@@ -411,20 +424,30 @@ class MainActivity : ComponentActivity() {
                         0 -> {
                             HoldToConfirmSos(
                                 countdown = activeState == AlertState.COUNTDOWN,
+                                sosModeActive = sosModeActive,
                                 remainingSeconds = remaining,
                                 onTrigger = startManualSos,
-                                onCancel = { AlertRuntime.cancel(this@MainActivity) }
+                                onCancel = {
+                                    AlertRuntime.cancel(this@MainActivity)
+                                    sosModeActive = settings.sosModeActive
+                                    activeState = AlertRuntime.state()
+                                }
                             )
                             Text("Dashboard", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                             val protectionTitle = when {
+                                sosModeActive -> "SOS-modus actief"
                                 listeningState == ListeningState.STARTING -> "Spraakdetectie wordt gestart"
                                 listeningState == ListeningState.PAUSED -> "Spraakdetectie heeft aandacht nodig"
+                                listeningState == ListeningState.ERROR -> "Spraakdetectie heeft aandacht nodig"
                                 listeningState == ListeningState.LISTENING && (inactivityEnabled || fallDetectionOn) -> "SOS-bewaking actief"
                                 listeningState == ListeningState.LISTENING -> "Spraakdetectie actief"
                                 fallDetectionOn -> "SOS-bewaking actief"
                                 inactivityEnabled -> "Inactiviteitsbewaking actief"
                                 else -> "Geen actieve SOS-triggers"
                             }
+                            val showSpeechStatus = listeningState != ListeningState.STOPPED
+                            val hasDetectionStatuses = showSpeechStatus || fallDetectionOn || inactivityEnabled
+                            val hasActionStatuses = smsEnabled || shareGps
                             ElevatedCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                     Text(protectionTitle, fontSize = 23.sp, fontWeight = FontWeight.Bold,
@@ -433,34 +456,38 @@ class MainActivity : ComponentActivity() {
                                             listeningState == ListeningState.LISTENING || inactivityEnabled || fallDetectionOn -> Color(0xFF005E55)
                                             else -> Color(0xFF9D2727)
                                         })
-                                    HorizontalDivider()
-                                    Text("Detectie", style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold)
-                                    StatusRow("Spraakdetectie", when (listeningState) {
-                                        ListeningState.LISTENING -> "Actief"
-                                        ListeningState.STARTING -> "Wordt gestart"
-                                        ListeningState.PAUSED -> "Gepauzeerd"
-                                        ListeningState.ERROR -> "Gestopt door fout"
-                                        ListeningState.STOPPED -> "Uit"
-                                    }, listeningState == ListeningState.LISTENING)
-                                    if (listeningDetail.isNotBlank()) Text(listeningDetail,
-                                        style = MaterialTheme.typography.bodySmall)
-                                    StatusRow("Valdetectie", when {
-                                        !fallDetectionOn -> "Uit"
-                                        fallServiceActive -> "Actief"
-                                        else -> "Niet actief"
-                                    }, fallServiceActive)
-                                    if (fallDetectionOn && fallDetail.isNotBlank()) Text(fallDetail,
-                                        style = MaterialTheme.typography.bodySmall)
-                                    StatusRow("Inactiviteitsbewaking",
-                                        if (inactivityEnabled) "Alarm na $inactivityHours uur zonder ontgrendeling" else "Uit",
-                                        inactivityEnabled)
-                                    HorizontalDivider()
-                                    Text("Actie", style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold)
-                                    StatusRow("SMS-actie", if (!smsEnabled) "Uit" else if (smsReady) "Ingeschakeld" else "Ingeschakeld, niet ingesteld",
-                                        smsEnabled && smsReady)
-                                    StatusRow("Locatie delen", if (shareGps) "Ingeschakeld" else "Uit", shareGps)
+                                    if (hasDetectionStatuses) {
+                                        HorizontalDivider()
+                                        Text("Detectie", style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold)
+                                        if (showSpeechStatus) {
+                                            StatusRow("Spraakdetectie", when (listeningState) {
+                                                ListeningState.LISTENING -> "Actief"
+                                                ListeningState.STARTING -> "Wordt gestart"
+                                                ListeningState.PAUSED -> "Gepauzeerd"
+                                                ListeningState.ERROR -> "Gestopt door fout"
+                                                ListeningState.STOPPED -> "Uit"
+                                            }, listeningState == ListeningState.LISTENING)
+                                            if (listeningDetail.isNotBlank()) Text(listeningDetail,
+                                                style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        if (fallDetectionOn) {
+                                            StatusRow("Valdetectie", if (fallServiceActive) "Actief" else "Niet actief",
+                                                fallServiceActive)
+                                            if (fallDetail.isNotBlank()) Text(fallDetail,
+                                                style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        if (inactivityEnabled) StatusRow("Inactiviteitsbewaking",
+                                            "Actief ($inactivityHours uur)", true)
+                                    }
+                                    if (hasActionStatuses) {
+                                        if (hasDetectionStatuses) HorizontalDivider()
+                                        Text("Acties", style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.SemiBold)
+                                        if (smsEnabled) StatusRow("SMS-actie",
+                                            if (smsReady) "Ingeschakeld" else "Ingeschakeld, niet ingesteld", smsReady)
+                                        if (shareGps) StatusRow("Locatie delen", "Ingeschakeld", true)
+                                    }
                                 }
                             }
                         }
@@ -469,7 +496,7 @@ class MainActivity : ComponentActivity() {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("Spraakdetectie", fontWeight = FontWeight.SemiBold)
-                                    Text("Herkent lokaal de hulpzinnen ‘help mij’ en ‘ik heb hulp nodig’.",
+                                    Text("Herkent lokaal de ingestelde hulpzinnen.",
                                         style = MaterialTheme.typography.bodySmall)
                                 }
                                 Switch(checked = voiceDetectionOn, onCheckedChange = { enabled ->
@@ -493,6 +520,43 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 })
+                            }
+                            if (voiceDetectionOn) {
+                                Column(Modifier.fillMaxWidth().padding(start = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text("Wake-zinnen", style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold)
+                                    if (wakePhrases.isEmpty()) Text("Geen wake-zinnen ingesteld.")
+                                    wakePhrases.forEach { phrase ->
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                            Text(phrase, modifier = Modifier.weight(1f))
+                                            TextButton(onClick = {
+                                                wakePhrases = wakePhrases - phrase
+                                                settings.wakePhrases = wakePhrases
+                                                message = "Wijzigingen gelden na opnieuw starten van spraakdetectie."
+                                            }) { Text("Verwijder") }
+                                        }
+                                    }
+                                    OutlinedTextField(wakePhraseInput, { wakePhraseInput = it },
+                                        label = { Text("Nieuwe wake-zin") }, singleLine = true,
+                                        modifier = Modifier.fillMaxWidth())
+                                    Button(onClick = {
+                                        val phrase = WakePhrases.unique(listOf(wakePhraseInput)).firstOrNull()
+                                        when {
+                                            phrase == null -> message = "Voer een wake-zin in."
+                                            wakePhrases.any { WakePhrases.normalize(it) == WakePhrases.normalize(phrase) } ->
+                                                message = "Deze wake-zin staat al in de lijst."
+                                            else -> {
+                                                wakePhrases = WakePhrases.unique(wakePhrases + phrase)
+                                                settings.wakePhrases = wakePhrases
+                                                wakePhraseInput = ""
+                                                message = "Wake-zin opgeslagen. Herstart spraakdetectie om deze toe te passen."
+                                            }
+                                        }
+                                    }, enabled = wakePhraseInput.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+                                        Text("Wake-zin toevoegen")
+                                    }
+                                }
                             }
                             if (!microphoneAllowed) OutlinedButton(onClick = {
                                 permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
@@ -546,7 +610,7 @@ class MainActivity : ComponentActivity() {
                                         try {
                                             InactivityMonitor.setEnabled(this@MainActivity, enabled)
                                             inactivityEnabled = enabled
-                                            message = if (enabled) "Inactiviteitsbewaking ingeschakeld." else "Inactiviteitsbewaking uitgeschakeld."
+                                            message = ""
                                         } catch (_: RuntimeException) {
                                             if (enabled) runCatching {
                                                 InactivityMonitor.setEnabled(this@MainActivity, false)
@@ -557,17 +621,22 @@ class MainActivity : ComponentActivity() {
                                     }
                                 })
                             }
-                            Text("SOS na $inactivityHours uur zonder ontgrendeling",
-                                style = MaterialTheme.typography.bodySmall)
-                            Slider(value = inactivityHours.toFloat(), onValueChange = { value ->
-                                inactivityHours = value.toInt().coerceIn(1, 72)
-                                settings.inactivityHours = inactivityHours
-                            }, onValueChangeFinished = {
-                                InactivityMonitor.schedule(this@MainActivity)
-                            }, valueRange = 1f..72f, steps = 70)
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("1 uur", style = MaterialTheme.typography.bodySmall)
-                                Text("72 uur", style = MaterialTheme.typography.bodySmall)
+                            if (inactivityEnabled) {
+                                Column(Modifier.fillMaxWidth().padding(start = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("SOS na $inactivityHours uur zonder ontgrendeling",
+                                        style = MaterialTheme.typography.bodySmall)
+                                    Slider(value = inactivityHours.toFloat(), onValueChange = { value ->
+                                        inactivityHours = value.toInt().coerceIn(1, 72)
+                                        settings.inactivityHours = inactivityHours
+                                    }, onValueChangeFinished = {
+                                        InactivityMonitor.schedule(this@MainActivity)
+                                    }, valueRange = 1f..72f, steps = 70)
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("1 uur", style = MaterialTheme.typography.bodySmall)
+                                        Text("72 uur", style = MaterialTheme.typography.bodySmall)
+                                    }
+                                }
                             }
                             if (!smsEnabled && inactivityEnabled) {
                                 Text("SMS staat uit; bij een alarm klinkt alleen het lokale alarmsignaal.",
@@ -800,6 +869,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun HoldToConfirmSos(
     countdown: Boolean,
+    sosModeActive: Boolean,
     remainingSeconds: Int,
     onTrigger: () -> Unit,
     onCancel: () -> Unit
@@ -817,24 +887,49 @@ private fun HoldToConfirmSos(
         }
     }
 
-    if (countdown) {
-        Text("SOS-alarm over $remainingSeconds seconden", fontSize = 23.sp, fontWeight = FontWeight.Bold)
-        Button(onClick = onCancel, modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-            Text("Annuleer alarm")
+    if (countdown || sosModeActive) {
+        if (countdown) Text("SOS-alarm over $remainingSeconds seconden", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        else Text("SOS-modus actief", fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Button(onClick = onCancel, modifier = Modifier.fillMaxWidth().height(144.dp),
+            shape = RoundedCornerShape(8.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA8332A))) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("Annuleer SOS", fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                Text("Tik om te annuleren")
+            }
         }
     } else {
-        Button(
-            onClick = {},
-            modifier = Modifier.fillMaxWidth().height(144.dp).pointerInput(Unit) {
-                detectTapGestures(onPress = {
-                    isPressed = true
-                    val heldForThreeSeconds = withTimeoutOrNull(3_000L) { tryAwaitRelease() } == null
-                    isPressed = false
-                    if (heldForThreeSeconds) currentOnTrigger()
-                })
-            },
-            shape = RoundedCornerShape(8.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA8332A), contentColor = Color.White)
+        Box(
+            modifier = Modifier.fillMaxWidth().height(144.dp)
+                .background(Color(0xFFA8332A), RoundedCornerShape(8.dp))
+                .semantics {
+                    role = Role.Button
+                    onClick(label = "SOS starten") {
+                        currentOnTrigger()
+                        true
+                    }
+                }
+                .pointerInput(Unit) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown(requireUnconsumed = false)
+                        isPressed = true
+                        val heldForThreeSeconds = withTimeoutOrNull(3_000L) {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == down.id }
+                                    ?: return@withTimeoutOrNull false
+                                if (!change.pressed || change.position.x !in 0f..size.width.toFloat() ||
+                                    change.position.y !in 0f..size.height.toFloat()
+                                ) return@withTimeoutOrNull false
+                            }
+                            false
+                        } ?: true
+                        isPressed = false
+                        if (heldForThreeSeconds) currentOnTrigger()
+                    }
+                },
+            contentAlignment = Alignment.Center
         ) {
             Column(
                 modifier = Modifier.fillMaxWidth(),

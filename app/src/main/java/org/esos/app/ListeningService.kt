@@ -94,7 +94,7 @@ class ListeningService : Service() {
         try {
             val dutch = ModelAssets.unpack(this, "vosk-model-small-nl-0.22") { active }
             if (!active) return
-            VoskDetector(dutch).use { detector ->
+            VoskDetector(dutch, AppSettings(this).wakePhrases).use { detector ->
                 val minimum = AudioRecord.getMinBufferSize(SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
                 require(minimum > 0) { "16 kHz microfoon niet beschikbaar" }

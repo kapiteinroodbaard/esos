@@ -35,6 +35,7 @@ object AlertRuntime {
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis) { settings.homeAddress }
         coordinator = alarm
         if (!alarm.start(reason)) return false
+        if (!isTest) settings.sosModeActive = true
         app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong("deadline", alarm.deadline).putString("reason", reason.name)
             .putBoolean("manualTest", isTest).commit()
@@ -48,14 +49,27 @@ object AlertRuntime {
     }
 
     fun cancel(context: Context): Boolean {
-        val result = coordinator?.cancel() == true
-        if (result) {
-            clearPending(context)
-            tone?.release()
-            tone = null
-            notificationManager(context).cancel(101)
+        val settings = AppSettings(context)
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val hasPendingAlarm = prefs.contains("deadline")
+        val cancelledCountdown = coordinator?.cancel() == true
+        if (!cancelledCountdown && !settings.sosModeActive && !hasPendingAlarm) return false
+        if (settings.smsEnabled) {
+            val isTest = prefs.getBoolean("manualTest", false)
+            val incidentId = coordinator?.incidentId?.takeIf { it > 0L } ?: System.currentTimeMillis()
+            try {
+                SmsAlertSender(context, settings).send(incidentId, AlertMessageFormatter.cancellation(isTest))
+            } catch (_: RuntimeException) {
+                settings.smsStatus = "SOS geannuleerd, maar de annulerings-SMS is niet verzonden. Controleer contact, SIM en machtigingen."
+            }
         }
-        return result
+        settings.sosModeActive = false
+        clearPending(context)
+        coordinator?.reset()
+        tone?.release()
+        tone = null
+        notificationManager(context).cancel(101)
+        return true
     }
 
     fun state(): AlertState = coordinator?.state ?: AlertState.IDLE
