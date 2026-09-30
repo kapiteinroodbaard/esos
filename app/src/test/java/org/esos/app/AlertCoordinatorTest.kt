@@ -83,6 +83,8 @@ class AlertCoordinatorTest {
         callback!!(GpsFix(51.0, 4.0, 20f, time))
         callback!!(GpsFix(52.0, 5.0, 20f, time))
         assertEquals(2, messages.size)
+        assertTrue(messages[1].contains("geo:51.0,4.0"))
+        assertFalse(messages[1].contains("maps.google.com"))
     }
 
     @Test fun cancelledAlarmNeverSends() {
@@ -113,6 +115,8 @@ class AlertCoordinatorTest {
         coordinator.tick()
         assertEquals(1, messages.size)
         assertTrue(messages.single().contains("52.0,5.0"))
+        assertTrue(messages.single().contains("geo:52.0,5.0"))
+        assertFalse(messages.single().contains("maps.google.com"))
         callback!!(GpsFix(53.0, 6.0, 20f, time))
         assertEquals(1, messages.size)
     }

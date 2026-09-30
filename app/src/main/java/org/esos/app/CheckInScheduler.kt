@@ -38,6 +38,9 @@ class BootReceiver : BroadcastReceiver() {
             if (intent.action == Intent.ACTION_BOOT_COMPLETED && AppSettings(context).speechDetectionEnabled) {
                 ListeningService.showBootReminder(context)
             }
+            if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
+                AlertRuntime.restoreActiveSosNotification(context)
+            }
             CheckInScheduler.clear(context)
             InactivityMonitor.schedule(context)
             InactivityMonitorService.startIfEnabled(context)

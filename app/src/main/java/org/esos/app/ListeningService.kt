@@ -254,13 +254,11 @@ class ListeningService : Service() {
             val startIntent = PendingIntent.getForegroundService(context, 32,
                 Intent(context, ListeningService::class.java).setAction(START),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            val openAppIntent = PendingIntent.getActivity(context, 33, Intent(context, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             notifications.notify(BOOT_NOTIFICATION_ID, Notification.Builder(context, BOOT_CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
                 .setContentTitle("Spraakdetectie staat uit")
                 .setContentText("Tik op Starten om de spraakdetectie te hervatten.")
-                .setContentIntent(openAppIntent)
+                .setContentIntent(startIntent)
                 .setAutoCancel(true)
                 .addAction(Notification.Action.Builder(null, "Starten", startIntent).build())
                 .build())

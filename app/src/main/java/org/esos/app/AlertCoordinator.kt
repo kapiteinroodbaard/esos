@@ -127,5 +127,5 @@ class AlertCoordinator(
     }
 
     private fun formatFix(fix: GpsFix): String =
-        "GPS: ${fix.latitude},${fix.longitude} (nauwkeurigheid ${fix.accuracyMeters.toInt()} m, tijd ${fix.timestampMillis}); https://maps.google.com/?q=${fix.latitude},${fix.longitude}"
+        "GPS: ${fix.latitude},${fix.longitude} (nauwkeurigheid ${fix.accuracyMeters.toInt()} m, tijd ${fix.timestampMillis}); geo:${fix.latitude},${fix.longitude}"
 }

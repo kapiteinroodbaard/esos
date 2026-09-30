@@ -13,7 +13,9 @@ import android.os.Looper
 
 object AlertRuntime {
     const val CHANNEL = "alarm"
+    private const val ACTIVE_SOS_CHANNEL = "active_sos"
     private const val PREFS = "pending_alarm"
+    private const val ACTIVE_SOS_NOTIFICATION_ID = 106
     private var coordinator: AlertCoordinator? = null
     private val handler = Handler(Looper.getMainLooper())
 
@@ -69,6 +71,7 @@ object AlertRuntime {
         clearPending(context)
         coordinator?.reset()
         notificationManager(context).cancel(101)
+        notificationManager(context).cancel(ACTIVE_SOS_NOTIFICATION_ID)
         return true
     }
 
@@ -82,6 +85,10 @@ object AlertRuntime {
     fun state(): AlertState = coordinator?.state ?: AlertState.IDLE
     fun remainingSeconds(): Int = coordinator?.takeIf { it.state == AlertState.COUNTDOWN }
         ?.let { ((it.deadline - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0).toInt() } ?: 0
+
+    fun restoreActiveSosNotification(context: Context) {
+        if (AppSettings(context).sosModeActive) showActiveSosNotification(context)
+    }
 
     fun recover(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -122,7 +129,25 @@ object AlertRuntime {
     private fun enterSosPhase(context: Context, isTest: Boolean) {
         if (isTest) return
         AppSettings(context).sosModeActive = true
+        showActiveSosNotification(context)
         AlertAudioPlayer.play(context, R.raw.noodprocedure_gestart)
+    }
+
+    private fun showActiveSosNotification(context: Context) {
+        val notifications = notificationManager(context)
+        notifications.createNotificationChannel(
+            NotificationChannel(ACTIVE_SOS_CHANNEL, "SOS actief", NotificationManager.IMPORTANCE_HIGH)
+        )
+        val openApp = PendingIntent.getActivity(context, 13, Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        notifications.notify(ACTIVE_SOS_NOTIFICATION_ID, Notification.Builder(context, ACTIVE_SOS_CHANNEL)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("SOS actief")
+            .setContentText("SOS-modus is actief. Tik om e-SOS te openen.")
+            .setContentIntent(openApp)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .build())
     }
 
     private fun fallback(context: Context) = PendingIntent.getBroadcast(context, 12,
