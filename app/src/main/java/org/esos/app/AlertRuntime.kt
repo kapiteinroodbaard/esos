@@ -10,15 +10,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.media.AudioManager
-import android.media.ToneGenerator
 
 object AlertRuntime {
     const val CHANNEL = "alarm"
     private const val PREFS = "pending_alarm"
     private var coordinator: AlertCoordinator? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var tone: ToneGenerator? = null
 
     fun start(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, false)
 
@@ -36,6 +33,7 @@ object AlertRuntime {
         coordinator = alarm
         if (!alarm.start(reason)) return false
         if (!isTest) settings.sosModeActive = true
+        if (!isTest) AlertAudioPlayer.play(app, *announcementAudio(reason))
         app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong("deadline", alarm.deadline).putString("reason", reason.name)
             .putBoolean("manualTest", isTest).commit()
@@ -54,6 +52,7 @@ object AlertRuntime {
         val hasPendingAlarm = prefs.contains("deadline")
         val cancelledCountdown = coordinator?.cancel() == true
         if (!cancelledCountdown && !settings.sosModeActive && !hasPendingAlarm) return false
+        AlertAudioPlayer.play(context, R.raw.noodprocedure_geannuleerd)
         if (settings.smsEnabled) {
             val isTest = prefs.getBoolean("manualTest", false)
             val incidentId = coordinator?.incidentId?.takeIf { it > 0L } ?: System.currentTimeMillis()
@@ -66,10 +65,15 @@ object AlertRuntime {
         settings.sosModeActive = false
         clearPending(context)
         coordinator?.reset()
-        tone?.release()
-        tone = null
         notificationManager(context).cancel(101)
         return true
+    }
+
+    private fun announcementAudio(reason: AlertReason): IntArray = when (reason) {
+        AlertReason.SPEECH_DETECTED -> intArrayOf(R.raw.hulproep_gedetecteerd, R.raw.noodprocedure_gestart)
+        AlertReason.INACTIVITY -> intArrayOf(R.raw.inactiviteitswaarschuwing, R.raw.noodprocedure_gestart)
+        AlertReason.FALL -> intArrayOf(R.raw.val_detectie, R.raw.noodprocedure_gestart)
+        AlertReason.SOS, AlertReason.MISSED_CHECK_IN -> intArrayOf(R.raw.noodprocedure_gestart)
     }
 
     fun state(): AlertState = coordinator?.state ?: AlertState.IDLE
@@ -143,14 +147,8 @@ object AlertRuntime {
                     context, 10, Intent(context, CancelAlertReceiver::class.java),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )).build()).build())
-            try {
-                if (tone == null) tone = ToneGenerator(AudioManager.STREAM_ALARM, 80)
-                tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
-            } catch (_: RuntimeException) { }
             handler.postDelayed({ tick(context, alarm) }, 250L)
         } else {
-            tone?.release()
-            tone = null
             notificationManager(context).cancel(101)
             handler.postDelayed({ alarm.tick(); alarm.reset() }, 20_001L)
         }

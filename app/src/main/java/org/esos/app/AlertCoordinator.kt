@@ -17,7 +17,13 @@ interface AlertSender {
 }
 
 enum class AlertState { IDLE, COUNTDOWN, SENT, CANCELLED, ERROR }
-enum class AlertReason { SOS, MISSED_CHECK_IN, INACTIVITY }
+enum class AlertReason(val countdownMillis: Long) {
+    SOS(10_000L),
+    SPEECH_DETECTED(60_000L),
+    MISSED_CHECK_IN(10_000L),
+    INACTIVITY(60_000L),
+    FALL(60_000L)
+}
 
 object AlertMessageFormatter {
     fun format(isTest: Boolean, text: String): String =
@@ -44,7 +50,7 @@ class AlertCoordinator(
     private var supplementSent = false
     private var reason = AlertReason.SOS
 
-    fun start(reason: AlertReason, countdownMillis: Long = 10_000L): Boolean {
+    fun start(reason: AlertReason, countdownMillis: Long = reason.countdownMillis): Boolean {
         if (state == AlertState.COUNTDOWN || state == AlertState.SENT) return false
         incidentId++
         this.reason = reason
@@ -101,8 +107,10 @@ class AlertCoordinator(
             sentAt = time
             val base = when (reason) {
                 AlertReason.SOS -> "SOS: ik heb mogelijk hulp nodig."
+                AlertReason.SPEECH_DETECTED -> "SOS: hulpzin herkend; ik heb mogelijk hulp nodig."
                 AlertReason.MISSED_CHECK_IN -> "SOS: geen dagelijkse bevestiging ontvangen."
                 AlertReason.INACTIVITY -> "SOS: telefoon niet ontgrendeld binnen de ingestelde tijd."
+                AlertReason.FALL -> "SOS: val gedetecteerd; mogelijk hulp nodig."
             }
             val home = address().trim().takeIf { it.isNotEmpty() }?.let { " Huisadres: $it." } ?: ""
             val gps = fix?.takeIf { it.usable(time) }?.let { " ${formatFix(it)}" } ?: ""

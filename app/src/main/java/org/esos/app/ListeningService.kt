@@ -175,7 +175,9 @@ class ListeningService : Service() {
                         if (detector.acceptPcm16(samples, count)) {
                             mainHandler.post {
                                 if (active && AlertRuntime.state() != AlertState.COUNTDOWN &&
-                                    AlertRuntime.state() != AlertState.SENT && !AlertRuntime.start(this, AlertReason.SOS)) {
+                                    AlertRuntime.state() != AlertState.SENT &&
+                                    !AlertRuntime.start(this, AlertReason.SPEECH_DETECTED)
+                                ) {
                                     ListeningStatus.update(ListeningState.ERROR, "Alarm kan niet starten: controleer SMS en SIM")
                                     stopSelf()
                                 }

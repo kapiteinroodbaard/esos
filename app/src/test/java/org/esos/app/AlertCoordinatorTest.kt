@@ -30,6 +30,25 @@ class AlertCoordinatorTest {
             AlertMessageFormatter.cancellation(true))
     }
 
+    @Test fun safetyTriggersUseOneMinuteCountdown() {
+        val sender = object : AlertSender {
+            override fun send(incidentId: Long, text: String) {}
+        }
+        val location = object : IncidentLocation {
+            override fun request(onFix: (GpsFix) -> Unit) = object : LocationRequest {
+                override fun cancel() {}
+            }
+        }
+        listOf(AlertReason.SPEECH_DETECTED, AlertReason.INACTIVITY, AlertReason.FALL).forEach { reason ->
+            val alarm = AlertCoordinator(sender, location, { time })
+            assertTrue(alarm.start(reason))
+            assertEquals(time + 60_000L, alarm.deadline)
+        }
+        val manualAlarm = AlertCoordinator(sender, location, { time })
+        assertTrue(manualAlarm.start(AlertReason.SOS))
+        assertEquals(time + 10_000L, manualAlarm.deadline)
+    }
+
     @Test fun sendsWithoutGpsAtDeadlineAndOnlyOneTimelySupplement() {
         assertTrue(coordinator.start(AlertReason.SOS))
         assertFalse(coordinator.start(AlertReason.SOS))
