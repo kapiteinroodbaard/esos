@@ -89,9 +89,7 @@ class ListeningService : Service() {
         try {
             val dutch = ModelAssets.unpack(this, "vosk-model-small-nl-0.22") { active }
             if (!active) return
-            val english = ModelAssets.unpack(this, "vosk-model-small-en-us-0.15") { active }
-            if (!active) return
-            VoskDetector(dutch, english).use { detector ->
+            VoskDetector(dutch).use { detector ->
                 val minimum = AudioRecord.getMinBufferSize(SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
                 require(minimum > 0) { "16 kHz microfoon niet beschikbaar" }
@@ -156,9 +154,9 @@ class ListeningService : Service() {
                             require(audio.recordingState == AudioRecord.RECORDSTATE_RECORDING) { "Microfoon neemt niet op" }
                         }
                         if (ListeningStatus.state != ListeningState.LISTENING) {
-                            ListeningStatus.update(ListeningState.LISTENING, "Luistert: NL en EN")
+                            ListeningStatus.update(ListeningState.LISTENING, "Luistert in het Nederlands")
                             getSystemService(NotificationManager::class.java)
-                                .notify(NOTIFICATION_ID, notification("Luistert naar hulpfrases (NL/EN)"))
+                                .notify(NOTIFICATION_ID, notification("Luistert naar Nederlandse hulpfrases"))
                         }
                         val count = audio.read(samples, 0, samples.size, AudioRecord.READ_BLOCKING)
                         if (!active) break

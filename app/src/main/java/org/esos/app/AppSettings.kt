@@ -7,6 +7,8 @@ import org.json.JSONObject
 
 data class FamilyContact(val name: String, val number: String)
 
+enum class SosMode { ALARM, TEST }
+
 class AppSettings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -41,6 +43,16 @@ class AppSettings(context: Context) {
     var smsEnabled: Boolean
         get() = prefs.getBoolean("smsEnabled", true)
         set(value) { prefs.edit().putBoolean("smsEnabled", value).apply() }
+    var sosMode: SosMode
+        get() = runCatching { SosMode.valueOf(prefs.getString("sosMode", SosMode.ALARM.name) ?: SosMode.ALARM.name) }
+            .getOrDefault(SosMode.ALARM)
+        set(value) { prefs.edit().putString("sosMode", value.name).apply() }
+    var fallDetectionEnabled: Boolean
+        get() = prefs.getBoolean("fallDetection", false)
+        set(value) { prefs.edit().putBoolean("fallDetection", value).apply() }
+    var fallSensitivity: Int
+        get() = prefs.getInt("fallSensitivity", 3).coerceIn(1, 5)
+        set(value) { prefs.edit().putInt("fallSensitivity", value.coerceIn(1, 5)).apply() }
     var checkInEnabled: Boolean
         get() = prefs.getBoolean("checkIn", false)
         set(value) { prefs.edit().putBoolean("checkIn", value).apply() }

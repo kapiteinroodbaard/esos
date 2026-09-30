@@ -67,6 +67,11 @@ class MainActivity : ComponentActivity() {
         var selectedSim by remember { mutableIntStateOf(settings.simId) }
         var shareGps by remember { mutableStateOf(settings.shareLocation) }
         var smsEnabled by remember { mutableStateOf(settings.smsEnabled) }
+        var sosMode by remember { mutableStateOf(settings.sosMode) }
+        var fallDetectionOn by remember { mutableStateOf(settings.fallDetectionEnabled) }
+        var fallSensitivity by remember { mutableIntStateOf(settings.fallSensitivity) }
+        var fallServiceActive by remember { mutableStateOf(FallDetectionStatus.active) }
+        var fallDetail by remember { mutableStateOf(FallDetectionStatus.detail) }
         var checkIn by remember { mutableStateOf(settings.checkInEnabled) }
         var hour by remember { mutableIntStateOf(settings.checkInHour) }
         var minute by remember { mutableIntStateOf(settings.checkInMinute) }
@@ -132,6 +137,27 @@ class MainActivity : ComponentActivity() {
             if (granted) contactPicker.launch(null)
             else message = "Contacttoegang is nodig om een contact te selecteren."
         }
+        val enableFallDetection: () -> Unit = {
+            fallDetectionOn = true
+            settings.fallDetectionEnabled = true
+            try {
+                FallDetectionService.start(this@MainActivity)
+                message = "Valdetectie ingeschakeld."
+            } catch (_: RuntimeException) {
+                fallDetectionOn = false
+                settings.fallDetectionEnabled = false
+                message = "Valdetectie kon niet starten; controleer de machtigingen."
+            }
+        }
+        val fallPermissions = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestMultiplePermissions()
+        ) { result ->
+            permissionRefresh++
+            if (result[Manifest.permission.ACTIVITY_RECOGNITION] == true &&
+                result[Manifest.permission.POST_NOTIFICATIONS] == true
+            ) enableFallDetection()
+            else message = "Bewegingsherkenning en meldingentoegang zijn nodig voor valdetectie."
+        }
         LaunchedEffect(permissionVersion, permissionRefresh) {
             while (true) {
                 status = settings.smsStatus
@@ -139,12 +165,15 @@ class MainActivity : ComponentActivity() {
                 activeState = AlertRuntime.state()
                 listeningState = ListeningStatus.state
                 listeningDetail = ListeningStatus.detail
+                fallServiceActive = FallDetectionStatus.active
+                fallDetail = FallDetectionStatus.detail
                 delay(500)
             }
         }
         val phoneAllowed = checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED
         val smsAllowed = checkSelfPermission(Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
         val notificationsAllowed = checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        val activityRecognitionAllowed = checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
         val fineAllowed = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val backgroundAllowed = checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
         val microphoneAllowed = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
@@ -344,8 +373,10 @@ class MainActivity : ComponentActivity() {
             val started = AlertRuntime.start(this@MainActivity, AlertReason.SOS)
             message = when {
                 !started -> "Alarm niet gestart: controleer SMS-instellingen onder Acties."
-                smsEnabled -> "Alarm gestart; 10 seconden om te annuleren."
-                else -> "Alarm gestart; SMS staat uit en er wordt geen bericht verzonden."
+                sosMode == SosMode.TEST && !smsEnabled -> "SOS-test gestart; SMS staat uit en er wordt geen bericht verzonden."
+                !smsEnabled -> "Alarm gestart; SMS staat uit en er wordt geen bericht verzonden."
+                sosMode == SosMode.TEST -> "SOS-test gestart; testberichten worden na 10 seconden verstuurd."
+                else -> "Alarm gestart; echte SOS-berichten worden na 10 seconden verstuurd."
             }
         }
 
@@ -377,8 +408,9 @@ class MainActivity : ComponentActivity() {
                             val protectionTitle = when {
                                 listeningState == ListeningState.STARTING -> "Spraakdetectie wordt gestart"
                                 listeningState == ListeningState.PAUSED -> "Spraakdetectie heeft aandacht nodig"
-                                listeningState == ListeningState.LISTENING && checkIn -> "Bescherming actief"
+                                listeningState == ListeningState.LISTENING && (checkIn || fallDetectionOn) -> "SOS-bewaking actief"
                                 listeningState == ListeningState.LISTENING -> "Spraakdetectie actief"
+                                fallDetectionOn -> "SOS-bewaking actief"
                                 checkIn -> "Dagelijkse check-in actief"
                                 else -> "Geen actieve SOS-triggers"
                             }
@@ -387,7 +419,7 @@ class MainActivity : ComponentActivity() {
                                     Text(protectionTitle, fontSize = 23.sp, fontWeight = FontWeight.Bold,
                                         color = when {
                                             listeningState == ListeningState.PAUSED -> Color(0xFF8B5E00)
-                                            listeningState == ListeningState.LISTENING || checkIn -> Color(0xFF005E55)
+                                            listeningState == ListeningState.LISTENING || checkIn || fallDetectionOn -> Color(0xFF005E55)
                                             else -> Color(0xFF9D2727)
                                         })
                                     HorizontalDivider()
@@ -400,6 +432,15 @@ class MainActivity : ComponentActivity() {
                                     }, listeningState == ListeningState.LISTENING)
                                     if (listeningDetail.isNotBlank()) Text(listeningDetail,
                                         style = MaterialTheme.typography.bodySmall)
+                                    StatusRow("Valdetectie", when {
+                                        !fallDetectionOn -> "Uit"
+                                        fallServiceActive -> "Actief"
+                                        else -> "Niet actief"
+                                    }, fallServiceActive)
+                                    if (fallDetectionOn && fallDetail.isNotBlank()) Text(fallDetail,
+                                        style = MaterialTheme.typography.bodySmall)
+                                    StatusRow("SOS-modus", if (sosMode == SosMode.TEST) "Test" else "Alarm",
+                                        sosMode == SosMode.ALARM)
                                     StatusRow("Dagelijkse check-in", if (checkIn) "Actief om %02d:%02d".format(hour, minute) else "Uit", checkIn)
                                     StatusRow("SMS-actie", if (!smsEnabled) "Uit" else if (smsReady) "Ingeschakeld" else "Ingeschakeld, niet ingesteld",
                                         smsEnabled && smsReady)
@@ -424,7 +465,25 @@ class MainActivity : ComponentActivity() {
                         }
                         1 -> {
                             Text("SOS-activering", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                            Text("Spraakdetectie start een SOS-alarm bij deze vaste frases: 'help help', 'help mij', 'ik heb hulp nodig', 'help me' of 'I need help'.")
+                            Text("Spraakdetectie start een SOS-alarm bij de frases: 'help help', 'help mij' of 'ik heb hulp nodig'.")
+                            Text("SOS-modus", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = sosMode == SosMode.ALARM, onClick = {
+                                    sosMode = SosMode.ALARM
+                                    settings.sosMode = sosMode
+                                })
+                                Text("Alarmmodus")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = sosMode == SosMode.TEST, onClick = {
+                                    sosMode = SosMode.TEST
+                                    settings.sosMode = sosMode
+                                })
+                                Text("SOS-testmodus")
+                            }
+                            Text(if (sosMode == SosMode.TEST)
+                                "Ingeschakelde berichtacties sturen herkenbare testberichten, geen echte noodmelding."
+                            else "Ingeschakelde berichtacties sturen echte SOS-berichten naar de ingestelde contacten.")
                             HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
@@ -457,6 +516,41 @@ class MainActivity : ComponentActivity() {
                                 permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
                             }) { Text("Vraag microfoontoegang") }
                             if (smsEnabled && !smsReady) Text("De SMS-actie is nog niet ingesteld. Configureer deze onder Acties om spraakdetectie te starten.")
+                            HorizontalDivider()
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Valdetectie", fontWeight = FontWeight.SemiBold)
+                                    Text("Detecteert vrije val, impact en daarna stilstand met de versnellingsmeter.",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = fallDetectionOn, onCheckedChange = { enabled ->
+                                    if (!enabled) {
+                                        fallDetectionOn = false
+                                        settings.fallDetectionEnabled = false
+                                        FallDetectionService.stop(this@MainActivity)
+                                        message = "Valdetectie uitgeschakeld."
+                                    } else {
+                                        val requestedPermissions = buildList {
+                                            if (!activityRecognitionAllowed) add(Manifest.permission.ACTIVITY_RECOGNITION)
+                                            if (!notificationsAllowed) add(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                        if (requestedPermissions.isEmpty()) enableFallDetection()
+                                        else fallPermissions.launch(requestedPermissions.toTypedArray())
+                                    }
+                                })
+                            }
+                            if (fallDetectionOn) {
+                                Text(fallDetail, style = MaterialTheme.typography.bodySmall)
+                                Text("Gevoeligheid: $fallSensitivity / 5", fontWeight = FontWeight.SemiBold)
+                                Slider(value = fallSensitivity.toFloat(), onValueChange = { value ->
+                                    fallSensitivity = value.toInt()
+                                    settings.fallSensitivity = fallSensitivity
+                                }, valueRange = 1f..5f, steps = 3)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Minder gevoelig", style = MaterialTheme.typography.bodySmall)
+                                    Text("Meer gevoelig", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
                             HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
@@ -509,9 +603,13 @@ class MainActivity : ComponentActivity() {
                             Text("Handmatig", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                             if (activeState != AlertState.COUNTDOWN) {
                                 OutlinedButton(onClick = {
-                                    message = if (AlertRuntime.start(this@MainActivity, AlertReason.SOS, simulate = true))
-                                        "Simulatie gestart; er wordt geen echte SMS verzonden." else "Er is al een alarm actief."
-                                }, modifier = Modifier.fillMaxWidth()) { Text("Test zonder SMS") }
+                                    val started = AlertRuntime.start(this@MainActivity, AlertReason.SOS, SosMode.TEST)
+                                    message = when {
+                                        !started -> "SOS-test niet gestart: controleer SMS-instellingen of er is al een alarm actief."
+                                        !smsEnabled -> "SOS-test gestart; de SMS-actie staat uit, dus er wordt geen bericht verzonden."
+                                        else -> "SOS-test gestart; testberichten worden na 10 seconden verstuurd."
+                                    }
+                                }, modifier = Modifier.fillMaxWidth()) { Text("Start SOS-test") }
                             }
                             if (message.isNotBlank()) Text(message)
                         }

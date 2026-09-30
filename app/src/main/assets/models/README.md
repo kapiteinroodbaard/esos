@@ -1,13 +1,12 @@
 # Modelstatus
 
-Vosk NL/EN zijn gebundeld in deze bronboom. De app heeft een door de gebruiker
+Vosk NL is gebundeld in deze bronboom. De app heeft een door de gebruiker
 te starten offline microfoonservice. Er zijn nog geen resultaten van de
 toestel-/datasetproef; herkenning en F-Droid-opname zijn niet vrijgegeven.
 
 | Gebundeld model | Rechtstreekse bron | SHA-256 van ZIP | Cataloguslicentie |
 | --- | --- | --- | --- |
 | vosk-model-small-nl-0.22.zip | [Alpha Cephei](https://alphacephei.com/vosk/models/vosk-model-small-nl-0.22.zip) | `039811c3b829de64e4f123a9f684a53784005b212a346ac0b899dc7efce2ed0a` | Apache-2.0 |
-| vosk-model-small-en-us-0.15.zip | [Alpha Cephei](https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip) | `30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498` | Apache-2.0 |
 
 De [Apache-2.0-licentietekst](LICENSE-APACHE-2.0.txt) staat bij de modellen;
 de originele README-bestanden en eventuele notices blijven in de ZIP's.
@@ -22,7 +21,7 @@ Te vergelijken (andere opties niet geselecteerd of gevalideerd):
 
 | Kandidaat | Bron | Vermelde licentie | Werkelijk te toetsen woorden |
 | --- | --- | --- | --- |
-| Vosk NL 0.22, EN-US 0.15 | [modelcatalogus](https://alphacephei.com/vosk/models) | Apache-2.0 volgens modelcatalogus | help help; help mij; ik heb hulp nodig; help me; I need help |
+| Vosk NL 0.22 | [modelcatalogus](https://alphacephei.com/vosk/models) | Apache-2.0 volgens modelcatalogus | help help; help mij; ik heb hulp nodig |
 | sherpa-onnx KWS | [KWS-catalogus](https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html) | Per gekozen model apart controleren | Engelse hulpfrases |
 | openWakeWord bestaande Engelse modellen | [broncode](https://github.com/dscripka/openWakeWord) | code Apache-2.0; meegeleverde modellen CC BY-NC-SA-4.0 | bijvoorbeeld hey mycroft, NIET help help |
 

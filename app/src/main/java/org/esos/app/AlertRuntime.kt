@@ -20,25 +20,21 @@ object AlertRuntime {
     private val handler = Handler(Looper.getMainLooper())
     private var tone: ToneGenerator? = null
 
-    fun start(context: Context, reason: AlertReason, simulate: Boolean = false): Boolean {
+    fun start(context: Context, reason: AlertReason, mode: SosMode? = null): Boolean {
         val app = context.applicationContext
         val settings = AppSettings(app)
+        val activeMode = mode ?: settings.sosMode
         val sms = SmsAlertSender(app, settings)
         if (coordinator?.state == AlertState.COUNTDOWN || coordinator?.state == AlertState.SENT) return false
-        if (!simulate && settings.smsEnabled && !sms.ready()) return false
-        val sender = senderFor(settings, sms, simulate)
+        if (settings.smsEnabled && !sms.ready()) return false
+        val sender = senderFor(settings, sms, activeMode)
         coordinator?.reset()
-        val source = if (simulate) object : IncidentLocation {
-            override fun request(onFix: (GpsFix) -> Unit): LocationRequest = object : LocationRequest {
-                override fun cancel() {}
-            }
-        } else AndroidIncidentLocation(app, settings)
-        val alarm = AlertCoordinator(sender, source, System::currentTimeMillis) { settings.homeAddress }
+        val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis) { settings.homeAddress }
         coordinator = alarm
         if (!alarm.start(reason)) return false
         app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong("deadline", alarm.deadline).putString("reason", reason.name)
-            .putBoolean("simulate", simulate).commit()
+            .putString("mode", activeMode.name).commit()
         app.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP, alarm.deadline, fallback(app))
         notificationManager(app).createNotificationChannel(
@@ -73,21 +69,24 @@ object AlertRuntime {
             return
         }
         val reason = runCatching { AlertReason.valueOf(prefs.getString("reason", "") ?: "") }.getOrNull()
-        val simulate = prefs.getBoolean("simulate", false)
+        val legacySimulation = prefs.getBoolean("simulate", false)
+        val mode = prefs.getString("mode", SosMode.ALARM.name)?.let {
+            runCatching { SosMode.valueOf(it) }.getOrNull()
+        } ?: SosMode.ALARM
         clearPending(context)
-        if (reason == null) return
+        if (reason == null || legacySimulation) return
         val active = coordinator
         if (active?.state == AlertState.COUNTDOWN) {
             active.tick()
             if (active.state == AlertState.ERROR) AppSettings(context).smsStatus = "SMS niet verzonden: controleer SIM en machtigingen"
-        } else if (!simulate) {
+        } else {
             val settings = AppSettings(context)
             val sms = SmsAlertSender(context, settings)
             if (settings.smsEnabled && !sms.ready()) {
                 settings.smsStatus = "Alarm na herstel niet verzonden: controleer SIM en machtigingen"
                 return
             }
-            val recovered = AlertCoordinator(senderFor(settings, sms, false), AndroidIncidentLocation(context, settings), System::currentTimeMillis) {
+            val recovered = AlertCoordinator(senderFor(settings, sms, mode), AndroidIncidentLocation(context, settings), System::currentTimeMillis) {
                 settings.homeAddress
             }
             coordinator = recovered
@@ -103,15 +102,10 @@ object AlertRuntime {
         Intent(context, AlarmDeadlineReceiver::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-    private fun senderFor(settings: AppSettings, sms: SmsAlertSender, simulate: Boolean): AlertSender = when {
-        simulate -> object : AlertSender {
-            override fun send(incidentId: Long, text: String) { settings.smsStatus = "Simulatie: geen SMS verstuurd. $text" }
-        }
-        else -> object : AlertSender {
-            override fun send(incidentId: Long, text: String) {
-                if (settings.smsEnabled) sms.send(incidentId, text)
-                else settings.smsStatus = "SMS uitgeschakeld; alarm niet per SMS verstuurd"
-            }
+    private fun senderFor(settings: AppSettings, sms: SmsAlertSender, mode: SosMode): AlertSender = object : AlertSender {
+        override fun send(incidentId: Long, text: String) {
+            if (settings.smsEnabled) sms.send(incidentId, AlertMessageFormatter.format(mode, text))
+            else settings.smsStatus = "SMS uitgeschakeld; alarm niet per SMS verstuurd"
         }
     }
 

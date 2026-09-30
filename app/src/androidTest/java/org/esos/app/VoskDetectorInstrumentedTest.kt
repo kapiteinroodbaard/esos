@@ -11,8 +11,7 @@ class VoskDetectorInstrumentedTest {
     @Test fun bundledModelsLoadAndRecognizeSilenceWithoutAlarm() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val dutch = ModelAssets.unpack(context, "vosk-model-small-nl-0.22") { true }
-        val english = ModelAssets.unpack(context, "vosk-model-small-en-us-0.15") { true }
-        VoskDetector(dutch, english).use { detector ->
+        VoskDetector(dutch).use { detector ->
             repeat(5) { assertFalse(detector.acceptPcm16(ShortArray(3_200), 3_200)) }
         }
     }

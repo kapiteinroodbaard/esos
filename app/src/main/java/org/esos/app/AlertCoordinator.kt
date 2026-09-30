@@ -19,6 +19,13 @@ interface AlertSender {
 enum class AlertState { IDLE, COUNTDOWN, SENT, CANCELLED, ERROR }
 enum class AlertReason { SOS, MISSED_CHECK_IN }
 
+object AlertMessageFormatter {
+    fun format(mode: SosMode, text: String): String = when (mode) {
+        SosMode.ALARM -> text
+        SosMode.TEST -> "e-SOS SOS-TEST (geen echte noodsituatie): $text"
+    }
+}
+
 class AlertCoordinator(
     private val sender: AlertSender,
     private val location: IncidentLocation,

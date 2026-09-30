@@ -109,6 +109,7 @@ class BootReceiver : BroadcastReceiver() {
         ) {
             CheckInScheduler.schedule(context)
             AlertRuntime.recover(context)
+            FallDetectionService.startIfEnabled(context)
         }
     }
 }

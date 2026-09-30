@@ -17,6 +17,13 @@ class AlertCoordinatorTest {
         override fun send(incidentId: Long, text: String) { messages.add(text) }
     }, location, { time })
 
+    @Test fun testModeMarksMessagesWithoutChangingAlarmMessages() {
+        val message = "SOS: ik heb mogelijk hulp nodig."
+        assertEquals(message, AlertMessageFormatter.format(SosMode.ALARM, message))
+        assertEquals("e-SOS SOS-TEST (geen echte noodsituatie): $message",
+            AlertMessageFormatter.format(SosMode.TEST, message))
+    }
+
     @Test fun sendsWithoutGpsAtDeadlineAndOnlyOneTimelySupplement() {
         assertTrue(coordinator.start(AlertReason.SOS))
         assertFalse(coordinator.start(AlertReason.SOS))
