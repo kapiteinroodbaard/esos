@@ -24,6 +24,12 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Contacts
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,7 +48,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        CheckInScheduler.schedule(this)
+        CheckInScheduler.clear(this)
+        InactivityMonitorService.startIfEnabled(this)
         setContent { MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF005E55),
             surface = Color(0xFFF9FAF7), onSurface = Color(0xFF182524))) { Home() } }
     }
@@ -67,14 +74,13 @@ class MainActivity : ComponentActivity() {
         var selectedSim by remember { mutableIntStateOf(settings.simId) }
         var shareGps by remember { mutableStateOf(settings.shareLocation) }
         var smsEnabled by remember { mutableStateOf(settings.smsEnabled) }
-        var sosMode by remember { mutableStateOf(settings.sosMode) }
+        var manualSosTestVisible by remember { mutableStateOf(true) }
         var fallDetectionOn by remember { mutableStateOf(settings.fallDetectionEnabled) }
         var fallSensitivity by remember { mutableIntStateOf(settings.fallSensitivity) }
         var fallServiceActive by remember { mutableStateOf(FallDetectionStatus.active) }
         var fallDetail by remember { mutableStateOf(FallDetectionStatus.detail) }
-        var checkIn by remember { mutableStateOf(settings.checkInEnabled) }
-        var hour by remember { mutableIntStateOf(settings.checkInHour) }
-        var minute by remember { mutableIntStateOf(settings.checkInMinute) }
+        var inactivityEnabled by remember { mutableStateOf(settings.inactivityEnabled) }
+        var inactivityHours by remember { mutableIntStateOf(settings.inactivityHours) }
         var status by remember { mutableStateOf(settings.smsStatus) }
         var message by remember { mutableStateOf("") }
         var showSmsTest by remember { mutableStateOf(false) }
@@ -373,9 +379,7 @@ class MainActivity : ComponentActivity() {
             val started = AlertRuntime.start(this@MainActivity, AlertReason.SOS)
             message = when {
                 !started -> "Alarm niet gestart: controleer SMS-instellingen onder Acties."
-                sosMode == SosMode.TEST && !smsEnabled -> "SOS-test gestart; SMS staat uit en er wordt geen bericht verzonden."
                 !smsEnabled -> "Alarm gestart; SMS staat uit en er wordt geen bericht verzonden."
-                sosMode == SosMode.TEST -> "SOS-test gestart; testberichten worden na 10 seconden verstuurd."
                 else -> "Alarm gestart; echte SOS-berichten worden na 10 seconden verstuurd."
             }
         }
@@ -384,13 +388,14 @@ class MainActivity : ComponentActivity() {
             modifier = Modifier.fillMaxSize(),
             bottomBar = {
                 NavigationBar {
-                    val tabs = listOf("Dashboard", "SOS", "Acties", "Instellingen")
-                    val symbols = listOf("◉", "!", "↗", "⚙")
+                    val tabs = listOf("Dashboard", "Detectie", "Acties", "Instellingen")
+                    val icons = listOf(Icons.Outlined.Home, Icons.Outlined.Mic,
+                        Icons.Outlined.Bolt, Icons.Outlined.Settings)
                     tabs.forEachIndexed { index, title ->
                         NavigationBarItem(
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
-                            icon = { Text(symbols[index], fontSize = 18.sp) },
+                            icon = { Icon(icons[index], contentDescription = null, modifier = Modifier.size(26.dp)) },
                             label = { Text(title) }
                         )
                     }
@@ -404,14 +409,20 @@ class MainActivity : ComponentActivity() {
                     verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     when (selectedTab) {
                         0 -> {
+                            HoldToConfirmSos(
+                                countdown = activeState == AlertState.COUNTDOWN,
+                                remainingSeconds = remaining,
+                                onTrigger = startManualSos,
+                                onCancel = { AlertRuntime.cancel(this@MainActivity) }
+                            )
                             Text("Dashboard", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                             val protectionTitle = when {
                                 listeningState == ListeningState.STARTING -> "Spraakdetectie wordt gestart"
                                 listeningState == ListeningState.PAUSED -> "Spraakdetectie heeft aandacht nodig"
-                                listeningState == ListeningState.LISTENING && (checkIn || fallDetectionOn) -> "SOS-bewaking actief"
+                                listeningState == ListeningState.LISTENING && (inactivityEnabled || fallDetectionOn) -> "SOS-bewaking actief"
                                 listeningState == ListeningState.LISTENING -> "Spraakdetectie actief"
                                 fallDetectionOn -> "SOS-bewaking actief"
-                                checkIn -> "Dagelijkse check-in actief"
+                                inactivityEnabled -> "Inactiviteitsbewaking actief"
                                 else -> "Geen actieve SOS-triggers"
                             }
                             ElevatedCard(Modifier.fillMaxWidth()) {
@@ -419,10 +430,12 @@ class MainActivity : ComponentActivity() {
                                     Text(protectionTitle, fontSize = 23.sp, fontWeight = FontWeight.Bold,
                                         color = when {
                                             listeningState == ListeningState.PAUSED -> Color(0xFF8B5E00)
-                                            listeningState == ListeningState.LISTENING || checkIn || fallDetectionOn -> Color(0xFF005E55)
+                                            listeningState == ListeningState.LISTENING || inactivityEnabled || fallDetectionOn -> Color(0xFF005E55)
                                             else -> Color(0xFF9D2727)
                                         })
                                     HorizontalDivider()
+                                    Text("Detectie", style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold)
                                     StatusRow("Spraakdetectie", when (listeningState) {
                                         ListeningState.LISTENING -> "Actief"
                                         ListeningState.STARTING -> "Wordt gestart"
@@ -439,56 +452,25 @@ class MainActivity : ComponentActivity() {
                                     }, fallServiceActive)
                                     if (fallDetectionOn && fallDetail.isNotBlank()) Text(fallDetail,
                                         style = MaterialTheme.typography.bodySmall)
-                                    StatusRow("SOS-modus", if (sosMode == SosMode.TEST) "Test" else "Alarm",
-                                        sosMode == SosMode.ALARM)
-                                    StatusRow("Dagelijkse check-in", if (checkIn) "Actief om %02d:%02d".format(hour, minute) else "Uit", checkIn)
+                                    StatusRow("Inactiviteitsbewaking",
+                                        if (inactivityEnabled) "Alarm na $inactivityHours uur zonder ontgrendeling" else "Uit",
+                                        inactivityEnabled)
+                                    HorizontalDivider()
+                                    Text("Actie", style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.SemiBold)
                                     StatusRow("SMS-actie", if (!smsEnabled) "Uit" else if (smsReady) "Ingeschakeld" else "Ingeschakeld, niet ingesteld",
                                         smsEnabled && smsReady)
                                     StatusRow("Locatie delen", if (shareGps) "Ingeschakeld" else "Uit", shareGps)
                                 }
                             }
-                            HoldToConfirmSos(
-                                countdown = activeState == AlertState.COUNTDOWN,
-                                remainingSeconds = remaining,
-                                onTrigger = startManualSos,
-                                onCancel = { AlertRuntime.cancel(this@MainActivity) }
-                            )
-                            if (settings.checkInDeadline > 0) {
-                                Text("Bevestiging gevraagd: alles goed?")
-                                Button(onClick = {
-                                    CheckInScheduler.confirm(this@MainActivity)
-                                    message = "Check-in bevestigd"
-                                }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                                    Text("Alles goed")
-                                }
-                            }
                         }
                         1 -> {
-                            Text("SOS-activering", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                            Text("Spraakdetectie start een SOS-alarm bij de frases: 'help help', 'help mij' of 'ik heb hulp nodig'.")
-                            Text("SOS-modus", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = sosMode == SosMode.ALARM, onClick = {
-                                    sosMode = SosMode.ALARM
-                                    settings.sosMode = sosMode
-                                })
-                                Text("Alarmmodus")
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = sosMode == SosMode.TEST, onClick = {
-                                    sosMode = SosMode.TEST
-                                    settings.sosMode = sosMode
-                                })
-                                Text("SOS-testmodus")
-                            }
-                            Text(if (sosMode == SosMode.TEST)
-                                "Ingeschakelde berichtacties sturen herkenbare testberichten, geen echte noodmelding."
-                            else "Ingeschakelde berichtacties sturen echte SOS-berichten naar de ingestelde contacten.")
-                            HorizontalDivider()
+                            Text("Detectie", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("Spraakdetectie", fontWeight = FontWeight.SemiBold)
-                                    Text("Herkent deze hulpfrases lokaal op dit toestel.", style = MaterialTheme.typography.bodySmall)
+                                    Text("Herkent lokaal de hulpzinnen ‘help mij’ en ‘ik heb hulp nodig’.",
+                                        style = MaterialTheme.typography.bodySmall)
                                 }
                                 Switch(checked = voiceDetectionOn, onCheckedChange = { enabled ->
                                     if (!enabled) {
@@ -505,7 +487,7 @@ class MainActivity : ComponentActivity() {
                                             ContextCompat.startForegroundService(this@MainActivity,
                                                 Intent(this@MainActivity, ListeningService::class.java)
                                                     .setAction(ListeningService.START))
-                                            message = "Modellen worden lokaal geladen; wacht op 'Luistert'."
+                                            message = ""
                                         } catch (_: RuntimeException) {
                                             message = "Spraakdetectie kon niet starten; controleer de machtigingen."
                                         }
@@ -528,7 +510,6 @@ class MainActivity : ComponentActivity() {
                                         fallDetectionOn = false
                                         settings.fallDetectionEnabled = false
                                         FallDetectionService.stop(this@MainActivity)
-                                        message = "Valdetectie uitgeschakeld."
                                     } else {
                                         val requestedPermissions = buildList {
                                             if (!activityRecognitionAllowed) add(Manifest.permission.ACTIVITY_RECOGNITION)
@@ -554,41 +535,43 @@ class MainActivity : ComponentActivity() {
                             HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Dagelijkse check-in", fontWeight = FontWeight.SemiBold)
-                                    Text("Elke dag om %02d:%02d, met 2 uur om te bevestigen.".format(hour, minute),
+                                    Text("Inactiviteitsbewaking", fontWeight = FontWeight.SemiBold)
+                                    Text("Een ontgrendeling geldt als teken dat je beschikbaar bent.",
                                         style = MaterialTheme.typography.bodySmall)
                                 }
-                                Switch(checked = checkIn, onCheckedChange = { enabled ->
+                                Switch(checked = inactivityEnabled, onCheckedChange = { enabled ->
                                     if (enabled && !notificationsAllowed) {
-                                        message = "Geef eerst meldingentoegang via Instellingen."
-                                    } else if (enabled && smsEnabled && !smsReady) {
-                                        message = "Stel eerst SMS-contact, SIM en machtigingen in via Acties."
+                                        message = "Geef eerst meldingentoegang via Instellingen voor de blijvende bewaking."
                                     } else {
-                                        checkIn = enabled
-                                        settings.checkInEnabled = enabled
-                                        if (!enabled) settings.checkInDeadline = 0L
-                                        CheckInScheduler.schedule(this@MainActivity)
+                                        try {
+                                            InactivityMonitor.setEnabled(this@MainActivity, enabled)
+                                            inactivityEnabled = enabled
+                                            message = if (enabled) "Inactiviteitsbewaking ingeschakeld." else "Inactiviteitsbewaking uitgeschakeld."
+                                        } catch (_: RuntimeException) {
+                                            if (enabled) runCatching {
+                                                InactivityMonitor.setEnabled(this@MainActivity, false)
+                                            }
+                                            inactivityEnabled = false
+                                            message = "Inactiviteitsbewaking kon niet starten; controleer de meldingsmachtiging."
+                                        }
                                     }
                                 })
                             }
-                            OutlinedButton(onClick = {
-                                TimePickerDialog(this@MainActivity, { _, chosenHour, chosenMinute ->
-                                    hour = chosenHour
-                                    minute = chosenMinute
-                                    settings.checkInHour = hour
-                                    settings.checkInMinute = minute
-                                    CheckInScheduler.schedule(this@MainActivity)
-                                }, hour, minute, true).show()
-                            }) { Text("Tijd wijzigen: %02d:%02d".format(hour, minute)) }
-                            if (!smsEnabled && checkIn) Text("SMS staat uit; bij een gemiste check-in volgt geen SMS-bericht.")
-                            if (settings.checkInDeadline > 0) {
-                                Text("Check-in wacht op bevestiging.")
-                                Button(onClick = {
-                                    CheckInScheduler.confirm(this@MainActivity)
-                                    message = "Check-in bevestigd"
-                                }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                                    Text("Alles goed")
-                                }
+                            Text("SOS na $inactivityHours uur zonder ontgrendeling",
+                                style = MaterialTheme.typography.bodySmall)
+                            Slider(value = inactivityHours.toFloat(), onValueChange = { value ->
+                                inactivityHours = value.toInt().coerceIn(1, 72)
+                                settings.inactivityHours = inactivityHours
+                            }, onValueChangeFinished = {
+                                InactivityMonitor.schedule(this@MainActivity)
+                            }, valueRange = 1f..72f, steps = 70)
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("1 uur", style = MaterialTheme.typography.bodySmall)
+                                Text("72 uur", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (!smsEnabled && inactivityEnabled) {
+                                Text("SMS staat uit; bij een alarm klinkt alleen het lokale alarmsignaal.",
+                                    style = MaterialTheme.typography.bodySmall)
                             }
                             HorizontalDivider()
                             if (activeState == AlertState.COUNTDOWN) {
@@ -600,10 +583,18 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             if (activeState == AlertState.COUNTDOWN) HorizontalDivider()
-                            Text("Handmatig", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                            if (activeState != AlertState.COUNTDOWN) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Handmatig", fontWeight = FontWeight.SemiBold)
+                                    Text("Toon de knop voor een handmatige SOS-test.",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = manualSosTestVisible,
+                                    onCheckedChange = { manualSosTestVisible = it })
+                            }
+                            if (manualSosTestVisible && activeState != AlertState.COUNTDOWN) {
                                 OutlinedButton(onClick = {
-                                    val started = AlertRuntime.start(this@MainActivity, AlertReason.SOS, SosMode.TEST)
+                                    val started = AlertRuntime.startManualTest(this@MainActivity, AlertReason.SOS)
                                     message = when {
                                         !started -> "SOS-test niet gestart: controleer SMS-instellingen of er is al een alarm actief."
                                         !smsEnabled -> "SOS-test gestart; de SMS-actie staat uit, dus er wordt geen bericht verzonden."
@@ -628,66 +619,74 @@ class MainActivity : ComponentActivity() {
                                 })
                             }
                             if (smsEnabled) {
-                                HorizontalDivider()
-                                Text("Noodcontacten", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
-                                contacts.forEach { contact ->
+                                Column(Modifier.fillMaxWidth().padding(start = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    HorizontalDivider()
+                                    Text("Noodcontacten", style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold)
+                                    contacts.forEach { contact ->
+                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                            Text("${contact.name}: ${contact.number}", modifier = Modifier.weight(1f))
+                                            TextButton(onClick = {
+                                                contacts = contacts - contact
+                                                settings.contacts = contacts
+                                            }) { Text("Verwijder") }
+                                        }
+                                    }
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        Text("${contact.name}: ${contact.number}", modifier = Modifier.weight(1f))
-                                        TextButton(onClick = {
-                                            contacts = contacts - contact
+                                        OutlinedTextField(name, { name = it }, label = { Text("Naam") }, singleLine = true,
+                                            modifier = Modifier.weight(1f))
+                                        IconButton(onClick = {
+                                            if (contactsAllowed) contactPicker.launch(null)
+                                            else contactPermission.launch(Manifest.permission.READ_CONTACTS)
+                                        }) {
+                                            Icon(Icons.Outlined.Contacts, contentDescription = "Contact kiezen")
+                                        }
+                                    }
+                                    OutlinedTextField(number, { number = it }, label = { Text("Telefoonnummer met landcode") },
+                                        singleLine = true, modifier = Modifier.fillMaxWidth())
+                                    Button(onClick = {
+                                        val normalized = android.telephony.PhoneNumberUtils.normalizeNumber(number)
+                                        if (name.isBlank() || !SmsAlertSender.validNumber(normalized)) {
+                                            message = "Vul een naam en internationaal nummer in (+ en 8-15 cijfers)."
+                                        } else if (contacts.any { it.number == normalized }) {
+                                            message = "Dit telefoonnummer is al opgeslagen."
+                                        } else {
+                                            contacts = contacts + FamilyContact(name.trim(), normalized)
                                             settings.contacts = contacts
-                                        }) { Text("Verwijder") }
+                                            name = ""
+                                            number = ""
+                                            message = "Contact opgeslagen."
+                                        }
+                                    }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
+                                    OutlinedTextField(address, { address = it }, label = { Text("Huisadres (optioneel)") },
+                                        modifier = Modifier.fillMaxWidth())
+                                    Text("SIM voor alarm-SMS", fontWeight = FontWeight.SemiBold)
+                                    if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
+                                    subscriptions.forEach { subscription ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            RadioButton(selected = selectedSim == subscription.subscriptionId, onClick = {
+                                                selectedSim = subscription.subscriptionId
+                                                settings.simId = selectedSim
+                                            })
+                                            Text("SIM ${subscription.simSlotIndex + 1}: ${subscription.displayName}")
+                                        }
                                     }
-                                }
-                                OutlinedButton(onClick = {
-                                    if (contactsAllowed) contactPicker.launch(null)
-                                    else contactPermission.launch(Manifest.permission.READ_CONTACTS)
-                                }, modifier = Modifier.fillMaxWidth()) { Text("Selecteer uit contacten") }
-                                OutlinedTextField(name, { name = it }, label = { Text("Naam") }, singleLine = true,
-                                    modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(number, { number = it }, label = { Text("Telefoonnummer met landcode") },
-                                    singleLine = true, modifier = Modifier.fillMaxWidth())
-                                Button(onClick = {
-                                    val normalized = android.telephony.PhoneNumberUtils.normalizeNumber(number)
-                                    if (name.isBlank() || !SmsAlertSender.validNumber(normalized)) {
-                                        message = "Vul een naam en internationaal nummer in (+ en 8-15 cijfers)."
-                                    } else if (contacts.any { it.number == normalized }) {
-                                        message = "Dit telefoonnummer is al opgeslagen."
-                                    } else {
-                                        contacts = contacts + FamilyContact(name.trim(), normalized)
-                                        settings.contacts = contacts
-                                        name = ""
-                                        number = ""
-                                        message = "Contact opgeslagen."
+                                    Button(onClick = {
+                                        settings.homeAddress = address
+                                        settings.simId = selectedSim
+                                        message = "SIM en adres opgeslagen."
+                                    }, modifier = Modifier.fillMaxWidth()) { Text("Bewaar SMS-instellingen") }
+                                    if (!smsAllowed) {
+                                        Text("SMS-toestemming is nodig om berichten te versturen.", color = Color(0xFFC62828))
+                                        OutlinedButton(onClick = {
+                                            permissions.launch(arrayOf(Manifest.permission.SEND_SMS))
+                                        }) { Text("Vraag SMS-toestemming") }
                                     }
-                                }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
-                                OutlinedTextField(address, { address = it }, label = { Text("Huisadres (optioneel)") },
-                                    modifier = Modifier.fillMaxWidth())
-                                Text("SIM voor alarm-SMS", fontWeight = FontWeight.SemiBold)
-                                if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
-                                subscriptions.forEach { subscription ->
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        RadioButton(selected = selectedSim == subscription.subscriptionId, onClick = {
-                                            selectedSim = subscription.subscriptionId
-                                            settings.simId = selectedSim
-                                        })
-                                        Text("SIM ${subscription.simSlotIndex + 1}: ${subscription.displayName}")
-                                    }
+                                    OutlinedButton(onClick = { showSmsTest = true }, enabled = smsReady,
+                                        modifier = Modifier.fillMaxWidth()) { Text("Test-SMS versturen") }
+                                    Text(status)
                                 }
-                                Button(onClick = {
-                                    settings.homeAddress = address
-                                    settings.simId = selectedSim
-                                    message = "SIM en adres opgeslagen."
-                                }, modifier = Modifier.fillMaxWidth()) { Text("Bewaar SMS-instellingen") }
-                                if (!smsAllowed) {
-                                    Text("SMS-toestemming is nodig om berichten te versturen.", color = Color(0xFFC62828))
-                                    OutlinedButton(onClick = {
-                                        permissions.launch(arrayOf(Manifest.permission.SEND_SMS))
-                                    }) { Text("Vraag SMS-toestemming") }
-                                }
-                                OutlinedButton(onClick = { showSmsTest = true }, enabled = smsReady,
-                                    modifier = Modifier.fillMaxWidth()) { Text("Test-SMS versturen") }
-                                Text(status)
                             }
                             HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

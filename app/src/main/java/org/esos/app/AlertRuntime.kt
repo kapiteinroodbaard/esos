@@ -20,21 +20,24 @@ object AlertRuntime {
     private val handler = Handler(Looper.getMainLooper())
     private var tone: ToneGenerator? = null
 
-    fun start(context: Context, reason: AlertReason, mode: SosMode? = null): Boolean {
+    fun start(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, false)
+
+    fun startManualTest(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, true)
+
+    private fun startInternal(context: Context, reason: AlertReason, isTest: Boolean): Boolean {
         val app = context.applicationContext
         val settings = AppSettings(app)
-        val activeMode = mode ?: settings.sosMode
         val sms = SmsAlertSender(app, settings)
         if (coordinator?.state == AlertState.COUNTDOWN || coordinator?.state == AlertState.SENT) return false
         if (settings.smsEnabled && !sms.ready()) return false
-        val sender = senderFor(settings, sms, activeMode)
+        val sender = senderFor(settings, sms, isTest)
         coordinator?.reset()
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis) { settings.homeAddress }
         coordinator = alarm
         if (!alarm.start(reason)) return false
         app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong("deadline", alarm.deadline).putString("reason", reason.name)
-            .putString("mode", activeMode.name).commit()
+            .putBoolean("manualTest", isTest).commit()
         app.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP, alarm.deadline, fallback(app))
         notificationManager(app).createNotificationChannel(
@@ -70,9 +73,7 @@ object AlertRuntime {
         }
         val reason = runCatching { AlertReason.valueOf(prefs.getString("reason", "") ?: "") }.getOrNull()
         val legacySimulation = prefs.getBoolean("simulate", false)
-        val mode = prefs.getString("mode", SosMode.ALARM.name)?.let {
-            runCatching { SosMode.valueOf(it) }.getOrNull()
-        } ?: SosMode.ALARM
+        val isTest = prefs.getBoolean("manualTest", false)
         clearPending(context)
         if (reason == null || legacySimulation) return
         val active = coordinator
@@ -86,7 +87,7 @@ object AlertRuntime {
                 settings.smsStatus = "Alarm na herstel niet verzonden: controleer SIM en machtigingen"
                 return
             }
-            val recovered = AlertCoordinator(senderFor(settings, sms, mode), AndroidIncidentLocation(context, settings), System::currentTimeMillis) {
+            val recovered = AlertCoordinator(senderFor(settings, sms, isTest), AndroidIncidentLocation(context, settings), System::currentTimeMillis) {
                 settings.homeAddress
             }
             coordinator = recovered
@@ -102,9 +103,9 @@ object AlertRuntime {
         Intent(context, AlarmDeadlineReceiver::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-    private fun senderFor(settings: AppSettings, sms: SmsAlertSender, mode: SosMode): AlertSender = object : AlertSender {
+    private fun senderFor(settings: AppSettings, sms: SmsAlertSender, isTest: Boolean): AlertSender = object : AlertSender {
         override fun send(incidentId: Long, text: String) {
-            if (settings.smsEnabled) sms.send(incidentId, AlertMessageFormatter.format(mode, text))
+            if (settings.smsEnabled) sms.send(incidentId, AlertMessageFormatter.format(isTest, text))
             else settings.smsStatus = "SMS uitgeschakeld; alarm niet per SMS verstuurd"
         }
     }

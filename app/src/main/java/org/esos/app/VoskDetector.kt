@@ -19,7 +19,7 @@ class VoskDetector(
         LibVosk.setLogLevel(LogLevel.WARNINGS)
         dutch = Model(dutchDirectory.absolutePath)
         try {
-            dutchRecognizer = Recognizer(dutch, 16_000f, """["help help","help mij","ik heb hulp nodig","[unk]"]""")
+            dutchRecognizer = Recognizer(dutch, 16_000f, """["help mij","ik heb hulp nodig","[unk]"]""")
         } catch (error: Exception) {
             dutch.close()
             throw error

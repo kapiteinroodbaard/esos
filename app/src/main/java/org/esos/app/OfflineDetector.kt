@@ -7,7 +7,7 @@ interface OfflineDetector : AutoCloseable {
 
 class PhraseMatcher(private val debounceMillis: Long = 30_000L) {
     private var lastHit = Long.MIN_VALUE
-    private val phrases = setOf("help help", "help mij", "ik heb hulp nodig")
+    private val phrases = setOf("help mij", "ik heb hulp nodig")
 
     fun matches(transcript: String, now: Long): Boolean {
         val normalized = transcript.lowercase().trim().replace(Regex("[.,!?]+"), "")

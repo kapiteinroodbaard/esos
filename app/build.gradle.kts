@@ -12,8 +12,8 @@ android {
         applicationId = "org.esos.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 9
-        versionName = "0.1.7"
+        versionCode = 11
+        versionName = "0.1.9"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
@@ -44,6 +44,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.05.00"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.core:core-ktx:1.16.0")
     implementation("com.alphacephei:vosk-android:0.3.75")

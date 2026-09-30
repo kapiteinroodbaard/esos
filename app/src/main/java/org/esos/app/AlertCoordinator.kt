@@ -17,13 +17,11 @@ interface AlertSender {
 }
 
 enum class AlertState { IDLE, COUNTDOWN, SENT, CANCELLED, ERROR }
-enum class AlertReason { SOS, MISSED_CHECK_IN }
+enum class AlertReason { SOS, MISSED_CHECK_IN, INACTIVITY }
 
 object AlertMessageFormatter {
-    fun format(mode: SosMode, text: String): String = when (mode) {
-        SosMode.ALARM -> text
-        SosMode.TEST -> "e-SOS SOS-TEST (geen echte noodsituatie): $text"
-    }
+    fun format(isTest: Boolean, text: String): String =
+        if (isTest) "e-SOS SOS-TEST (geen echte noodsituatie): $text" else text
 }
 
 class AlertCoordinator(
@@ -102,6 +100,7 @@ class AlertCoordinator(
             val base = when (reason) {
                 AlertReason.SOS -> "SOS: ik heb mogelijk hulp nodig."
                 AlertReason.MISSED_CHECK_IN -> "SOS: geen dagelijkse bevestiging ontvangen."
+                AlertReason.INACTIVITY -> "SOS: telefoon niet ontgrendeld binnen de ingestelde tijd."
             }
             val home = address().trim().takeIf { it.isNotEmpty() }?.let { " Huisadres: $it." } ?: ""
             val gps = fix?.takeIf { it.usable(time) }?.let { " ${formatFix(it)}" } ?: ""

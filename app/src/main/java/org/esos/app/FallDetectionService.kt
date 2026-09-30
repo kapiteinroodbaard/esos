@@ -44,7 +44,7 @@ class FallDetectionService : Service(), SensorEventListener {
         settings = AppSettings(this)
         if (!settings.fallDetectionEnabled) return stopWithError("Valdetectie is uitgeschakeld")
         if (checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) {
-            return stopWithError("Geef bewegingsherkenning toestemming via SOS-activering")
+            return stopWithError("Geef bewegingsherkenning toestemming via Detectie")
         }
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             return stopWithError("Geef meldingentoegang om valdetectie op de achtergrond te gebruiken")

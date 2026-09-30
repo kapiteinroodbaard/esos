@@ -7,8 +7,6 @@ import org.json.JSONObject
 
 data class FamilyContact(val name: String, val number: String)
 
-enum class SosMode { ALARM, TEST }
-
 class AppSettings(context: Context) {
     private val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -43,28 +41,27 @@ class AppSettings(context: Context) {
     var smsEnabled: Boolean
         get() = prefs.getBoolean("smsEnabled", true)
         set(value) { prefs.edit().putBoolean("smsEnabled", value).apply() }
-    var sosMode: SosMode
-        get() = runCatching { SosMode.valueOf(prefs.getString("sosMode", SosMode.ALARM.name) ?: SosMode.ALARM.name) }
-            .getOrDefault(SosMode.ALARM)
-        set(value) { prefs.edit().putString("sosMode", value.name).apply() }
+    var speechDetectionEnabled: Boolean
+        get() = prefs.getBoolean("speechDetectionEnabled", false)
+        set(value) { prefs.edit().putBoolean("speechDetectionEnabled", value).apply() }
     var fallDetectionEnabled: Boolean
         get() = prefs.getBoolean("fallDetection", false)
         set(value) { prefs.edit().putBoolean("fallDetection", value).apply() }
     var fallSensitivity: Int
         get() = prefs.getInt("fallSensitivity", 3).coerceIn(1, 5)
         set(value) { prefs.edit().putInt("fallSensitivity", value.coerceIn(1, 5)).apply() }
-    var checkInEnabled: Boolean
-        get() = prefs.getBoolean("checkIn", false)
-        set(value) { prefs.edit().putBoolean("checkIn", value).apply() }
-    var checkInHour: Int
-        get() = prefs.getInt("hour", 10)
-        set(value) { prefs.edit().putInt("hour", value).apply() }
-    var checkInMinute: Int
-        get() = prefs.getInt("minute", 0)
-        set(value) { prefs.edit().putInt("minute", value).apply() }
-    var checkInDeadline: Long
-        get() = prefs.getLong("deadline", 0L)
-        set(value) { prefs.edit().putLong("deadline", value).apply() }
+    var inactivityEnabled: Boolean
+        get() = prefs.getBoolean("inactivityEnabled", prefs.getBoolean("checkIn", false))
+        set(value) { prefs.edit().putBoolean("inactivityEnabled", value).putBoolean("checkIn", value).apply() }
+    var inactivityHours: Int
+        get() = prefs.getInt("inactivityHours", 24).coerceIn(1, 72)
+        set(value) { prefs.edit().putInt("inactivityHours", value.coerceIn(1, 72)).apply() }
+    var inactivityLockedSince: Long
+        get() = prefs.getLong("inactivityLockedSince", 0L)
+        set(value) { prefs.edit().putLong("inactivityLockedSince", value).apply() }
+    var inactivityTriggered: Boolean
+        get() = prefs.getBoolean("inactivityTriggered", false)
+        set(value) { prefs.edit().putBoolean("inactivityTriggered", value).apply() }
     var smsStatus: String
         get() = prefs.getString("smsStatus", "Nog geen SMS-resultaat") ?: ""
         set(value) { prefs.edit().putString("smsStatus", value).apply() }

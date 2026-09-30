@@ -6,6 +6,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -57,6 +58,8 @@ class ListeningService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == STOP) {
+            AppSettings(this).speechDetectionEnabled = false
+            getSystemService(NotificationManager::class.java).cancel(BOOT_NOTIFICATION_ID)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -79,6 +82,8 @@ class ListeningService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        settings.speechDetectionEnabled = true
+        getSystemService(NotificationManager::class.java).cancel(BOOT_NOTIFICATION_ID)
         active = true
         ListeningStatus.update(ListeningState.STARTING, "Offline modellen laden")
         worker = thread(name = "sos-voice", isDaemon = true) { listen() }
@@ -234,6 +239,28 @@ class ListeningService : Service() {
         const val STOP = "org.esos.app.STOP_LISTENING"
         private const val CHANNEL = "listening"
         private const val NOTIFICATION_ID = 103
+        private const val BOOT_NOTIFICATION_ID = 105
         private const val SAMPLE_RATE = 16_000
+
+        fun showBootReminder(context: Context) {
+            if (context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+            val notifications = context.getSystemService(NotificationManager::class.java)
+            if (!notifications.areNotificationsEnabled()) return
+            notifications.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Spraakdetectie", NotificationManager.IMPORTANCE_LOW))
+            val startIntent = PendingIntent.getForegroundService(context, 32,
+                Intent(context, ListeningService::class.java).setAction(START),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val openAppIntent = PendingIntent.getActivity(context, 33, Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            notifications.notify(BOOT_NOTIFICATION_ID, Notification.Builder(context, CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_btn_speak_now)
+                .setContentTitle("Spraakdetectie staat uit")
+                .setContentText("Tik op Starten om de spraakdetectie te hervatten.")
+                .setContentIntent(openAppIntent)
+                .setAutoCancel(true)
+                .addAction(Notification.Action.Builder(null, "Starten", startIntent).build())
+                .build())
+        }
     }
 }

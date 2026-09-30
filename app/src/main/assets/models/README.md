@@ -21,7 +21,7 @@ Te vergelijken (andere opties niet geselecteerd of gevalideerd):
 
 | Kandidaat | Bron | Vermelde licentie | Werkelijk te toetsen woorden |
 | --- | --- | --- | --- |
-| Vosk NL 0.22 | [modelcatalogus](https://alphacephei.com/vosk/models) | Apache-2.0 volgens modelcatalogus | help help; help mij; ik heb hulp nodig |
+| Vosk NL 0.22 | [modelcatalogus](https://alphacephei.com/vosk/models) | Apache-2.0 volgens modelcatalogus | help mij; ik heb hulp nodig |
 | sherpa-onnx KWS | [KWS-catalogus](https://k2-fsa.github.io/sherpa/onnx/kws/pretrained_models/index.html) | Per gekozen model apart controleren | Engelse hulpfrases |
 | openWakeWord bestaande Engelse modellen | [broncode](https://github.com/dscripka/openWakeWord) | code Apache-2.0; meegeleverde modellen CC BY-NC-SA-4.0 | bijvoorbeeld hey mycroft, NIET help help |
 
