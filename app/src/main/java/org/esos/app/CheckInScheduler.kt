@@ -41,6 +41,7 @@ class BootReceiver : BroadcastReceiver() {
             if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
                 AlertRuntime.restoreActiveSosNotification(context)
             }
+            SosCallScheduler.restore(context)
             CheckInScheduler.clear(context)
             InactivityMonitor.schedule(context)
             InactivityMonitorService.startIfEnabled(context)

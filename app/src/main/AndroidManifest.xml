@@ -16,10 +16,15 @@
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="false" />
     <application android:label="e-SOS" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:usesCleartextTraffic="false">
         <service android:name=".ListeningService" android:exported="false" android:foregroundServiceType="microphone" />
+        <service android:name=".SosOverlayService" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Rode niet-aanraakbare schermrand tijdens actieve SOS-modus boven andere apps" />
+        </service>
         <service android:name=".FallDetectionService" android:exported="false" android:foregroundServiceType="health" />
         <service android:name=".InactivityMonitorService" android:exported="false" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Bewaken van schermvergrendeling en ontgrendeling voor een ingestelde SOS-inactiviteitsduur" />
@@ -32,6 +37,11 @@
         </activity>
         <receiver android:name=".CancelAlertReceiver" android:exported="false" />
         <receiver android:name=".AlarmDeadlineReceiver" android:exported="false" />
+        <receiver android:name=".SosCallReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
+            </intent-filter>
+        </receiver>
         <receiver android:name=".CheckInReceiver" android:exported="false" />
         <receiver android:name=".InactivityAlarmReceiver" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="true">

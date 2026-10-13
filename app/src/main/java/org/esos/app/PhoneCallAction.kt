@@ -13,6 +13,15 @@ import android.os.SystemClock
 import android.telephony.PhoneNumberUtils
 import androidx.core.content.ContextCompat
 
+internal object TimedCallRound {
+    const val INTERVAL_MILLIS = 15 * 60 * 1_000L
+
+    fun nextIndex(currentIndex: Int, contactCount: Int): Int? =
+        (currentIndex + 1).takeIf { currentIndex >= 0 && it < contactCount }
+
+    fun nextDeadline(attemptedAt: Long): Long = attemptedAt + INTERVAL_MILLIS
+}
+
 object PhoneCallAction {
     const val EXTRA_SOS_ALERT = "org.esos.app.extra.SOS_ALERT"
     const val EXTRA_INCIDENT_ID = "org.esos.app.extra.INCIDENT_ID"

@@ -1,6 +1,7 @@
 package org.esos.app
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.ActivityManager
 import android.app.TimePickerDialog
 import android.content.Intent
@@ -22,12 +23,17 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.DragHandle
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.Contacts
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Mic
@@ -37,17 +43,123 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
+
+internal fun moveEmergencyContact(contacts: List<FamilyContact>, from: Int, to: Int): List<FamilyContact> {
+    if (from !in contacts.indices || to !in contacts.indices || from == to) return contacts
+    return contacts.toMutableList().apply { add(to, removeAt(from)) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EmergencyContacts(
+    contacts: List<FamilyContact>,
+    onChange: (List<FamilyContact>) -> Unit,
+    onAdd: () -> Unit
+) {
+    val currentContacts by rememberUpdatedState(contacts)
+    val currentOnChange by rememberUpdatedState(onChange)
+    val rowBounds = remember { mutableMapOf<String, Rect>() }
+    var draggedNumber by remember { mutableStateOf<String?>(null) }
+    var dragY by remember { mutableFloatStateOf(0f) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        contacts.forEach { contact ->
+            key(contact.number) {
+                var handleTop by remember { mutableFloatStateOf(0f) }
+                Row(Modifier.fillMaxWidth().height(88.dp)
+                    .onGloballyPositioned { rowBounds[contact.number] = it.boundsInRoot() }
+                    .background(if (draggedNumber == contact.number) MaterialTheme.colorScheme.secondaryContainer
+                        else Color.Transparent), verticalAlignment = Alignment.CenterVertically) {
+                    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text("Contact verplaatsen") } },
+                        state = rememberTooltipState()) {
+                        Box(Modifier.size(48.dp)
+                            .onGloballyPositioned { handleTop = it.boundsInRoot().top }
+                            .semantics {
+                                customActions = listOf(
+                                    CustomAccessibilityAction("Omhoog verplaatsen") {
+                                        val from = currentContacts.indexOfFirst { it.number == contact.number }
+                                        if (from > 0) {
+                                            currentOnChange(moveEmergencyContact(currentContacts, from, from - 1))
+                                            true
+                                        } else false
+                                    },
+                                    CustomAccessibilityAction("Omlaag verplaatsen") {
+                                        val from = currentContacts.indexOfFirst { it.number == contact.number }
+                                        if (from >= 0 && from < currentContacts.lastIndex) {
+                                            currentOnChange(moveEmergencyContact(currentContacts, from, from + 1))
+                                            true
+                                        } else false
+                                    }
+                                )
+                            }
+                            .pointerInput(contact.number) {
+                                detectDragGestures(
+                                    onDragStart = { offset ->
+                                        draggedNumber = contact.number
+                                        dragY = handleTop + offset.y
+                                    },
+                                    onDragEnd = { draggedNumber = null },
+                                    onDragCancel = { draggedNumber = null },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        dragY += amount.y
+                                        val list = currentContacts
+                                        val from = list.indexOfFirst { it.number == contact.number }
+                                        if (from >= 0) {
+                                            val to = list.indices.minByOrNull { candidate ->
+                                                rowBounds[list[candidate].number]?.let { bounds ->
+                                                    kotlin.math.abs(bounds.center.y - dragY)
+                                                } ?: Float.MAX_VALUE
+                                            } ?: from
+                                            if (from != to) currentOnChange(moveEmergencyContact(list, from, to))
+                                        }
+                                    }
+                                )
+                            }, contentAlignment = Alignment.Center) {
+                            Icon(Icons.Outlined.DragHandle, contentDescription = "Verplaats ${contact.name}")
+                        }
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(contact.name, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                            fontWeight = FontWeight.SemiBold)
+                        Text(contact.number, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall)
+                    }
+                    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text("Contact verwijderen") } },
+                        state = rememberTooltipState()) {
+                        IconButton(onClick = { currentOnChange(currentContacts - contact) }) {
+                            Icon(Icons.Outlined.Delete, contentDescription = "Verwijder ${contact.name}")
+                        }
+                    }
+                }
+            }
+        }
+        TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            tooltip = { PlainTooltip { Text("Contact toevoegen") } }, state = rememberTooltipState()) {
+            FilledIconButton(onClick = onAdd, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Outlined.Add, contentDescription = "Contact toevoegen uit contactenlijst")
+            }
+        }
+    }
+}
 
 class MainActivity : ComponentActivity() {
     private var permissionVersion by mutableIntStateOf(0)
@@ -63,6 +175,8 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         permissionVersion++
+        AlertRuntime.restoreActiveSosNotification(this)
+        SosCallScheduler.restore(this)
     }
 
     @Composable
@@ -71,8 +185,6 @@ class MainActivity : ComponentActivity() {
         val installedVersion = remember {
             packageManager.getPackageInfo(packageName, 0).versionName ?: "onbekend"
         }
-        var name by remember { mutableStateOf("") }
-        var number by remember { mutableStateOf("") }
         var setupComplete by remember { mutableStateOf(settings.setupComplete) }
         var setupStep by remember { mutableIntStateOf(0) }
         var contacts by remember { mutableStateOf(settings.contacts) }
@@ -95,6 +207,8 @@ class MainActivity : ComponentActivity() {
         var remaining by remember { mutableIntStateOf(0) }
         var activeState by remember { mutableStateOf(AlertRuntime.state()) }
         var sosModeActive by remember { mutableStateOf(settings.sosModeActive) }
+        var callRoundStatus by remember { mutableStateOf(SosCallScheduler.status(this)) }
+        var overlayVisible by remember { mutableStateOf(SosOverlay.visible) }
         var listeningState by remember { mutableStateOf(ListeningStatus.state) }
         var listeningDetail by remember { mutableStateOf(ListeningStatus.detail) }
         var permissionRefresh by remember { mutableIntStateOf(0) }
@@ -115,35 +229,33 @@ class MainActivity : ComponentActivity() {
                 else -> ""
             }
         }
-        val contactPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickContact()) { contactUri ->
+        val contactPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val contactUri = result.data?.data?.takeIf { result.resultCode == RESULT_OK }
             if (contactUri == null) {
                 message = "Geen contact geselecteerd."
             } else {
                 try {
                     val contact = contentResolver.query(contactUri,
-                        arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME),
+                        arrayOf(ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                            ContactsContract.CommonDataKinds.Phone.NUMBER),
                         null, null, null)?.use { cursor ->
                         if (cursor.moveToFirst()) cursor.getString(0) to cursor.getString(1) else null
                     }
                     if (contact == null) {
                         message = "Contact niet gevonden."
                     } else {
-                        val (contactId, contactName) = contact
-                        val phone = contentResolver.query(
-                            ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
-                            arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
-                            "${ContactsContract.CommonDataKinds.Phone.CONTACT_ID} = ?",
-                            arrayOf(contactId),
-                            "${ContactsContract.CommonDataKinds.Phone.IS_SUPER_PRIMARY} DESC, " +
-                                "${ContactsContract.CommonDataKinds.Phone.IS_PRIMARY} DESC, " +
-                                "${ContactsContract.CommonDataKinds.Phone._ID} ASC"
-                        )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0)?.trim() else null }
-                        if (phone.isNullOrBlank()) {
-                            message = "Voor dit contact is geen telefoonnummer opgeslagen."
-                        } else {
-                            name = contactName.orEmpty()
-                            number = android.telephony.PhoneNumberUtils.normalizeNumber(phone)
-                            message = "Eerste nummer voor ${name} geselecteerd."
+                        val (contactName, phone) = contact
+                        val normalized = android.telephony.PhoneNumberUtils.normalizeNumber(phone.orEmpty())
+                        when {
+                            !SmsAlertSender.validNumber(normalized) ->
+                                message = "Sla in de contactenlijst een internationaal nummer op (+ en 8-15 cijfers)."
+                            contacts.any { it.number == normalized } ->
+                                message = "Dit telefoonnummer is al opgeslagen."
+                            else -> {
+                                contacts = contacts + FamilyContact(contactName.orEmpty().ifBlank { normalized }, normalized)
+                                settings.contacts = contacts
+                                message = "Contact opgeslagen."
+                            }
                         }
                     }
                 } catch (_: SecurityException) {
@@ -153,9 +265,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        val pickContact: () -> Unit = {
+            try {
+                contactPicker.launch(Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI))
+            } catch (_: android.content.ActivityNotFoundException) {
+                message = "Geen contacten-app beschikbaar."
+            }
+        }
         val contactPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             permissionRefresh++
-            if (granted) contactPicker.launch(null)
+            if (granted) pickContact()
             else message = "Contacttoegang is nodig om een contact te selecteren."
         }
         val enableFallDetection: () -> Unit = {
@@ -184,6 +303,8 @@ class MainActivity : ComponentActivity() {
                 remaining = AlertRuntime.remainingSeconds()
                 activeState = AlertRuntime.state()
                 sosModeActive = settings.sosModeActive
+                callRoundStatus = SosCallScheduler.status(this@MainActivity)
+                overlayVisible = SosOverlay.visible
                 listeningState = ListeningStatus.state
                 listeningDetail = ListeningStatus.detail
                 fallServiceActive = FallDetectionStatus.active
@@ -200,6 +321,8 @@ class MainActivity : ComponentActivity() {
         val microphoneAllowed = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val contactsAllowed = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         val callPermissionAllowed = checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
+        val overlayAllowed = Settings.canDrawOverlays(this)
+        val exactAlarmsAllowed = getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
         val backgroundRestricted = getSystemService(ActivityManager::class.java).isBackgroundRestricted
         val powerManager = getSystemService(PowerManager::class.java)
         val batteryOptimizationDisabled = powerManager.isIgnoringBatteryOptimizations(packageName)
@@ -242,6 +365,20 @@ class MainActivity : ComponentActivity() {
         val openAppSettings = {
             startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:$packageName")))
+        }
+        val openOverlaySettings = {
+            try {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            } catch (_: android.content.ActivityNotFoundException) {
+                message = "Dit toestel biedt geen instelling voor weergave boven andere apps."
+            }
+        }
+        val openExactAlarmSettings = {
+            try {
+                startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
+            } catch (_: android.content.ActivityNotFoundException) {
+                message = "Dit toestel biedt geen instelling voor exacte alarmen."
+            }
         }
         val requestBatteryOptimizationExemption = {
             startActivity(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
@@ -318,32 +455,10 @@ class MainActivity : ComponentActivity() {
                         Text("Contacten en SIM", fontSize = 21.sp, fontWeight = FontWeight.Bold)
                         Text(if (singleSimId != null) "Voeg een bereikbaar noodcontact toe."
                             else "Voeg een bereikbaar noodcontact toe en kies de SIM voor alarm-SMS.")
-                        contacts.forEach { contact ->
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                Text("${contact.name}: ${contact.number}", modifier = Modifier.weight(1f))
-                                TextButton(onClick = {
-                                    contacts = contacts - contact
-                                    settings.contacts = contacts
-                                }) { Text("Verwijder") }
-                            }
-                        }
-                        OutlinedTextField(name, { name = it }, label = { Text("Naam") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth())
-                        OutlinedTextField(number, { number = it }, label = { Text("Telefoonnummer met landcode") }, singleLine = true,
-                            modifier = Modifier.fillMaxWidth())
-                        Button(onClick = {
-                            val normalized = android.telephony.PhoneNumberUtils.normalizeNumber(number)
-                            if (name.isBlank() || !SmsAlertSender.validNumber(normalized)) {
-                                message = "Vul een naam en internationaal nummer in (+ en 8-15 cijfers)."
-                            } else if (contacts.any { it.number == normalized }) {
-                                message = "Dit telefoonnummer is al opgeslagen."
-                            } else {
-                                contacts = contacts + FamilyContact(name.trim(), normalized)
-                                settings.contacts = contacts
-                                name = ""; number = ""
-                                message = "Contact opgeslagen."
-                            }
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
+                        EmergencyContacts(contacts, onChange = {
+                            contacts = it
+                            settings.contacts = it
+                        }, onAdd = pickContact)
                         if (subscriptions.size != 1) {
                             Text("SIM voor alarm-SMS", fontWeight = FontWeight.Bold)
                             if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
@@ -437,6 +552,27 @@ class MainActivity : ComponentActivity() {
                                 }
                             )
                             Text("Dashboard", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                            if (sosModeActive) {
+                                StatusRow("Rode rand boven andere apps",
+                                    if (overlayVisible) "Actief" else "Niet actief", overlayVisible)
+                                if (!overlayAllowed) OutlinedButton(onClick = openOverlaySettings) {
+                                    Text("Sta weergave boven andere apps toe")
+                                }
+                                if (callEnabled && callRoundStatus.isNotBlank()) Text(callRoundStatus)
+                            }
+                            if (!(smsEnabled && smsReady) && !(callEnabled && callReady)) {
+                                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer)
+                                    .padding(16.dp), verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Icon(Icons.Outlined.WarningAmber, contentDescription = "Waarschuwing",
+                                        tint = MaterialTheme.colorScheme.onErrorContainer)
+                                    Text(if (!smsEnabled && !callEnabled)
+                                        "Geen alarmacties actief. Bij een alarm wordt niemand gewaarschuwd. Dit is gevaarlijk."
+                                        else "Geen alarmacties gereed. Controleer Acties: bij een alarm kan niemand worden gewaarschuwd. Dit is gevaarlijk.",
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                             val protectionTitle = when {
                                 sosModeActive -> "SOS-modus actief"
                                 listeningState == ListeningState.STARTING -> "Spraakdetectie wordt gestart"
@@ -532,9 +668,9 @@ class MainActivity : ComponentActivity() {
                             if (voiceDetectionOn) {
                                 Column(Modifier.fillMaxWidth().padding(start = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text("Wake-zinnen", style = MaterialTheme.typography.titleMedium,
+                                    Text("Alarm-zinnen", style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.SemiBold)
-                                    if (wakePhrases.isEmpty()) Text("Geen wake-zinnen ingesteld.")
+                                    if (wakePhrases.isEmpty()) Text("Geen alarm-zinnen ingesteld.")
                                     wakePhrases.forEach { phrase ->
                                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                             Text(phrase, modifier = Modifier.weight(1f))
@@ -546,23 +682,23 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     OutlinedTextField(wakePhraseInput, { wakePhraseInput = it },
-                                        label = { Text("Nieuwe wake-zin") }, singleLine = true,
+                                        label = { Text("Nieuwe alarm-zin") }, singleLine = true,
                                         modifier = Modifier.fillMaxWidth())
                                     Button(onClick = {
                                         val phrase = WakePhrases.unique(listOf(wakePhraseInput)).firstOrNull()
                                         when {
-                                            phrase == null -> message = "Voer een wake-zin in."
+                                            phrase == null -> message = "Voer een alarm-zin in."
                                             wakePhrases.any { WakePhrases.normalize(it) == WakePhrases.normalize(phrase) } ->
-                                                message = "Deze wake-zin staat al in de lijst."
+                                                message = "Deze alarm-zin staat al in de lijst."
                                             else -> {
                                                 wakePhrases = WakePhrases.unique(wakePhrases + phrase)
                                                 settings.wakePhrases = wakePhrases
                                                 wakePhraseInput = ""
-                                                message = "Wake-zin opgeslagen. Herstart spraakdetectie om deze toe te passen."
+                                                message = "Alarm-zin opgeslagen. Herstart spraakdetectie om deze toe te passen."
                                             }
                                         }
                                     }, enabled = wakePhraseInput.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                                        Text("Wake-zin toevoegen")
+                                        Text("Alarm-zin toevoegen")
                                     }
                                 }
                             }
@@ -766,8 +902,9 @@ class MainActivity : ComponentActivity() {
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Contact bellen", fontWeight = FontWeight.SemiBold)
-                                    Text(if (callEnabled) "Het eerste noodcontact wordt gebeld via de telefoon-app." else "Er wordt niet gebeld.",
+                                    Text("Contacten bellen", fontWeight = FontWeight.SemiBold)
+                                    Text(if (callEnabled) "Het eerste contact wordt direct gebeld; daarna elke 15 minuten het volgende, zolang SOS actief is."
+                                        else "Er wordt niet gebeld.",
                                         style = MaterialTheme.typography.bodySmall)
                                 }
                                 Switch(checked = callEnabled, onCheckedChange = { enabled ->
@@ -775,6 +912,7 @@ class MainActivity : ComponentActivity() {
                                         !enabled -> {
                                             callEnabled = false
                                             settings.callEnabled = false
+                                            SosCallScheduler.cancel(this@MainActivity)
                                             message = "Belactie uitgeschakeld."
                                         }
                                         !callPermissionAllowed ->
@@ -788,45 +926,18 @@ class MainActivity : ComponentActivity() {
                                 })
                             }
                             if (callEnabled && !callReady) Text("Bellen vereist de belmachtiging en een noodcontact met een geldig nummer.")
+                            if (callEnabled && !exactAlarmsAllowed) {
+                                Text("Zonder exacte alarmen kan Android de volgende belpoging uitstellen.")
+                                OutlinedButton(onClick = openExactAlarmSettings) { Text("Sta exacte alarmen toe") }
+                            }
                             if (message.isNotBlank()) Text(message)
                         }
                         3 -> {
                             Text("Contacten", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                            contacts.forEach { contact ->
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    Text("${contact.name}: ${contact.number}", modifier = Modifier.weight(1f))
-                                    TextButton(onClick = {
-                                        contacts = contacts - contact
-                                        settings.contacts = contacts
-                                    }) { Text("Verwijder") }
-                                }
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                OutlinedTextField(name, { name = it }, label = { Text("Naam") }, singleLine = true,
-                                    modifier = Modifier.weight(1f))
-                                IconButton(onClick = {
-                                    if (contactsAllowed) contactPicker.launch(null)
-                                    else contactPermission.launch(Manifest.permission.READ_CONTACTS)
-                                }) {
-                                    Icon(Icons.Outlined.Contacts, contentDescription = "Contact kiezen")
-                                }
-                            }
-                            OutlinedTextField(number, { number = it }, label = { Text("Telefoonnummer met landcode") },
-                                singleLine = true, modifier = Modifier.fillMaxWidth())
-                            Button(onClick = {
-                                val normalized = android.telephony.PhoneNumberUtils.normalizeNumber(number)
-                                if (name.isBlank() || !SmsAlertSender.validNumber(normalized)) {
-                                    message = "Vul een naam en internationaal nummer in (+ en 8-15 cijfers)."
-                                } else if (contacts.any { it.number == normalized }) {
-                                    message = "Dit telefoonnummer is al opgeslagen."
-                                } else {
-                                    contacts = contacts + FamilyContact(name.trim(), normalized)
-                                    settings.contacts = contacts
-                                    name = ""
-                                    number = ""
-                                    message = "Contact opgeslagen."
-                                }
-                            }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
+                            EmergencyContacts(contacts, onChange = {
+                                contacts = it
+                                settings.contacts = it
+                            }, onAdd = pickContact)
                             if (message.isNotBlank()) Text(message)
                         }
                         else -> {
@@ -834,6 +945,12 @@ class MainActivity : ComponentActivity() {
                             Text("Machtigingen", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                             permissionStatuses.forEach { (label, granted) -> PermissionStatusRow(label, granted) }
                             PermissionStatusRow("Belmachtiging", callPermissionAllowed)
+                            PermissionStatusRow("Weergeven boven andere apps", overlayAllowed)
+                            if (!overlayAllowed) OutlinedButton(onClick = openOverlaySettings,
+                                modifier = Modifier.fillMaxWidth()) { Text("Sta weergave boven andere apps toe") }
+                            PermissionStatusRow("Exacte beltimers", exactAlarmsAllowed)
+                            if (!exactAlarmsAllowed) OutlinedButton(onClick = openExactAlarmSettings,
+                                modifier = Modifier.fillMaxWidth()) { Text("Sta exacte alarmen toe") }
                             if (backgroundRestricted) {
                                 Text("Sta e-SOS toe om op de achtergrond actief te blijven.")
                                 OutlinedButton(onClick = openAppSettings,

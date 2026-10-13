@@ -62,13 +62,19 @@ bevestigd. Het check-in-alarm gebruikt geen microfoon. Een SOS en een GPS-aanvul
 kunnen elk meerdere betaalde SMS-delen kosten. SMS vereist een actieve SIM,
 mobiel netwerk en de machtigingen SEND_SMS en READ_PHONE_STATE. "Verzonden" is
 niet hetzelfde als "afgeleverd" of "gelezen"; test contact en netwerk expliciet.
-De acties **SMS versturen** en **Contact bellen** zijn onafhankelijk.
+De acties **SMS versturen** en **Contacten bellen** zijn onafhankelijk.
 **Locatie delen** staat standaard aan en verschijnt als ingesprongen instelling
 onder **SMS versturen** wanneer die actie aan staat. Zonder SMS-actie wordt geen
 GPS-locatie opgevraagd; een eerder opgeslagen locatiekeuze blijft behouden.
-Contacten worden bij toevoegen/verwijderen direct opgeslagen en SIM-keuze en schakelaars
+Contacten worden met de plusknop rechtstreeks uit de contactenlijst toegevoegd;
+selecteer daar een internationaal telefoonnummer. Met de sleepgreep kunnen contacten
+omhoog of omlaag worden verplaatst, ook tijdens de eerste configuratie.
+Toevoegen, verwijderen en wijzigen van de volgorde worden direct opgeslagen; SIM-keuze en schakelaars
 gelden direct, zonder aparte bewaarknop. Als bellen aan staat, belt een echt alarm
-eenmaal het eerste noodcontact, ook als SMS uit staat of mislukt. De SOS-test belt
+het eerste noodcontact, ook als SMS uit staat of mislukt. Daarna wordt elke
+15 minuten het volgende contact geprobeerd, eenmaal door de hele lijst heen.
+De volgorde wordt bij het starten van de belronde vastgelegd; wijzigingen gelden
+voor het volgende alarm. De SOS-test belt
 nooit. Bij een echt alarm klinkt na het aanbieden van de SMS aan alle contacten
 de opname `7-sms-verstuurd.mp3`; dit bevestigt geen aflevering. Een mislukte
 SMS-aanbieding krijgt geen gesproken succesmelding. Voor het bellen klinkt
@@ -79,6 +85,33 @@ e-SOS geeft beschikbare Bluetooth-gespreksapparaten voorrang en vraagt anders
 speakerphone aan, maar kan de uiteindelijke audioroute, automatische ophanging
 en audio-instructies tijdens het gesprek niet afdwingen zonder telefoonapp-rol.
 Er wordt nooit automatisch een noodnummer gekozen.
+
+e-SOS vraagt geen standaard-telefoonapp-rol aan. Zonder die rol kan de app niet
+betrouwbaar vaststellen of een uitgaande oproep is opgenomen of deze automatisch
+verbreken. Ophangen na 5 seconden gesprek of 10 seconden overgaan en herhalen na
+5 minuten zonder antwoord zijn **niet beschikbaar**. De gebruiker beheert het
+gesprek in de bestaande telefoon-app. De volgende belpoging wordt 15 minuten na
+de vorige poging gepland, ongeacht beantwoording; een nog lopend gesprek kan de
+nieuwe oproep blokkeren. Een door Android geaccepteerd belverzoek bewijst niet
+dat het contact bereikt is. Androids gewone telefoonstatus maakt geen betrouwbaar onderscheid
+tussen uitgaand bellen en een opgenomen gesprek.
+De timer en contactvolgorde blijven in app-private opslag bewaard en worden na
+reboot herpland zolang SOS en de belactie actief zijn. Annuleren van SOS of
+uitschakelen van de belactie verwijdert alle toekomstige oproepen. Zonder
+toestemming **Exacte beltimers** kan Android de wachttijd verlengen. Bij verlies
+van het proces precies rond een belpoging kan die poging worden overgeslagen;
+het volgende contact blijft gepland. Er is geen externe beldienst.
+Het dashboard waarschuwt wanneer geen alarmactie is ingeschakeld of gereed is.
+
+De rode SOS-rand kan ook boven het Android-startscherm en gewone apps verschijnen.
+Verleen in **Instellingen** de speciale toestemming **Weergeven boven andere apps**.
+Vier smalle, niet-aanraakbare rode overlays laten de rest van het scherm vrij;
+een voorgronddienst houdt ze actief totdat SOS wordt geannuleerd. Zonder toestemming
+blijft alleen de rode rand binnen e-SOS beschikbaar. Android kan overlays verbergen
+op beveiligde apps, toestemmingsschermen, systeemschermen en het vergrendelscherm;
+een rand boven werkelijk ieder scherm is niet afdwingbaar. Na procesverlies probeert
+Android de randdienst te herstellen; na reboot of verleende toestemming wordt de
+rand hersteld bij herstel van SOS of het openen van e-SOS. Controleer de dashboardstatus.
 
 `SEND_SMS` is op Android een hard beperkt recht. De installer moet het voor de
 app toestaan; daarna moet de gebruiker het recht nog zelf verlenen. Bij een direct

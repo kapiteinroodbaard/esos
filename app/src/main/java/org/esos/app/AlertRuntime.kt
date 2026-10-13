@@ -70,6 +70,8 @@ object AlertRuntime {
             }
         }
         settings.sosModeActive = false
+        SosCallScheduler.cancel(context)
+        SosOverlay.stop(context)
         clearPending(context)
         coordinator?.reset()
         notificationManager(context).cancel(101)
@@ -89,7 +91,10 @@ object AlertRuntime {
         ?.let { ((it.deadline - System.currentTimeMillis() + 999) / 1000).coerceAtLeast(0).toInt() } ?: 0
 
     fun restoreActiveSosNotification(context: Context) {
-        if (AppSettings(context).sosModeActive) showActiveSosNotification(context)
+        if (AppSettings(context).sosModeActive) {
+            showActiveSosNotification(context)
+            SosOverlay.start(context)
+        }
     }
 
     fun recover(context: Context) {
@@ -128,6 +133,7 @@ object AlertRuntime {
         if (isTest) return
         AppSettings(context).sosModeActive = true
         showActiveSosNotification(context)
+        SosOverlay.start(context)
         AlertAudioPlayer.play(context, R.raw.noodprocedure_gestart)
     }
 
@@ -164,12 +170,12 @@ object AlertRuntime {
                 if (!PhoneCallAction.canStart(context, settings)) {
                     throw IllegalStateException("Belactie niet gereed; controleer belmachtiging en noodcontact")
                 }
-                val contact = settings.contacts.first()
+                val contacts = settings.contacts
                 AlertAudioPlayer.enqueue(context, R.raw.bellen_contact) {
                     if (settings.sosModeActive && settings.callEnabled &&
                         PhoneCallAction.canStart(context, settings)) {
                         runCatching {
-                            PhoneCallAction.startEmergencyCall(context, contact, incidentId)
+                            SosCallScheduler.start(context, contacts, incidentId)
                         }.onFailure {
                             android.util.Log.e("AlertRuntime", "Unable to start SOS call", it)
                         }
