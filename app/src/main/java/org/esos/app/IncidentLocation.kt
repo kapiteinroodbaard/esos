@@ -10,7 +10,7 @@ import android.os.CancellationSignal
 class AndroidIncidentLocation(private val context: Context, private val settings: AppSettings) : IncidentLocation {
     override fun request(onFix: (GpsFix) -> Unit): LocationRequest {
         val noop = object : LocationRequest { override fun cancel() {} }
-        if (!settings.shareLocation ||
+        if (!settings.smsEnabled || !settings.shareLocation ||
             context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
             context.checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED
         ) return noop

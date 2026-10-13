@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
         var wakePhrases by remember { mutableStateOf(settings.wakePhrases) }
         var wakePhraseInput by remember { mutableStateOf("") }
         var smsEnabled by remember { mutableStateOf(settings.smsEnabled) }
+        var callEnabled by remember { mutableStateOf(settings.callEnabled) }
         var manualSosTestVisible by remember { mutableStateOf(false) }
         var fallDetectionOn by remember { mutableStateOf(settings.fallDetectionEnabled) }
         var fallSensitivity by remember { mutableIntStateOf(settings.fallSensitivity) }
@@ -101,9 +102,15 @@ class MainActivity : ComponentActivity() {
 
         val permissions = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
             permissionRefresh++
+            if (result[Manifest.permission.CALL_PHONE] == true) {
+                callEnabled = true
+                settings.callEnabled = true
+            }
             message = when {
                 result[Manifest.permission.SEND_SMS] == false ->
                     "Android heeft SMS niet verleend. De aanvraag kan zonder dialoog worden afgewezen. e-SOS kan een door Android geblokkeerde toestemming niet zelf forceren."
+                result[Manifest.permission.CALL_PHONE] == false ->
+                    "Android heeft de belmachtiging niet verleend. De belactie blijft uit."
                 result.values.any { !it } -> "Niet alle machtigingen zijn verleend. Controleer de rechten hierboven en probeer het opnieuw."
                 else -> ""
             }
@@ -192,6 +199,7 @@ class MainActivity : ComponentActivity() {
         val backgroundAllowed = checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
         val microphoneAllowed = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
         val contactsAllowed = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        val callPermissionAllowed = checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
         val backgroundRestricted = getSystemService(ActivityManager::class.java).isBackgroundRestricted
         val powerManager = getSystemService(PowerManager::class.java)
         val batteryOptimizationDisabled = powerManager.isIgnoringBatteryOptimizations(packageName)
@@ -375,13 +383,16 @@ class MainActivity : ComponentActivity() {
 
         val smsSender = SmsAlertSender(this@MainActivity, settings)
         val smsReady = smsSender.ready()
+        val callReady = PhoneCallAction.canStart(this@MainActivity, settings)
         val voiceDetectionOn = listeningState == ListeningState.LISTENING ||
             listeningState == ListeningState.STARTING || listeningState == ListeningState.PAUSED
         val startManualSos: () -> Unit = {
             val started = AlertRuntime.startManual(this@MainActivity, AlertReason.SOS)
             sosModeActive = settings.sosModeActive
+            activeState = AlertRuntime.state()
             message = when {
-                !started -> "Alarm niet gestart: controleer SMS-instellingen onder Acties."
+                !started -> "Alarm niet gestart: controleer SMS- en belinstellingen onder Acties."
+                activeState == AlertState.ERROR -> "SOS gestart, maar een alarmactie mislukte. Controleer de instellingen."
                 !smsEnabled -> "SOS gestart; SMS staat uit en er wordt geen bericht verzonden."
                 else -> "SOS gestart; alarmberichten worden direct verstuurd."
             }
@@ -393,9 +404,9 @@ class MainActivity : ComponentActivity() {
             ),
             bottomBar = {
                 NavigationBar {
-                    val tabs = listOf("Dashboard", "Detectie", "Acties", "Instellingen")
+                    val tabs = listOf("Dashboard", "Detectie", "Acties", "Contacten", "Instellingen")
                     val icons = listOf(Icons.Outlined.Home, Icons.Outlined.Mic,
-                        Icons.Outlined.Bolt, Icons.Outlined.Settings)
+                        Icons.Outlined.Bolt, Icons.Outlined.Contacts, Icons.Outlined.Settings)
                     tabs.forEachIndexed { index, title ->
                         NavigationBarItem(
                             selected = selectedTab == index,
@@ -439,7 +450,7 @@ class MainActivity : ComponentActivity() {
                             }
                             val showSpeechStatus = listeningState != ListeningState.STOPPED
                             val hasDetectionStatuses = showSpeechStatus || fallDetectionOn || inactivityEnabled
-                            val hasActionStatuses = smsEnabled || shareGps
+                            val hasActionStatuses = smsEnabled || callEnabled
                             ElevatedCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                     Text(protectionTitle, fontSize = 23.sp, fontWeight = FontWeight.Bold,
@@ -478,7 +489,9 @@ class MainActivity : ComponentActivity() {
                                             fontWeight = FontWeight.SemiBold)
                                         if (smsEnabled) StatusRow("SMS-actie",
                                             if (smsReady) "Ingeschakeld" else "Ingeschakeld, niet ingesteld", smsReady)
-                                        if (shareGps) StatusRow("Locatie delen", "Ingeschakeld", true)
+                                        if (callEnabled) StatusRow("Belactie",
+                                            if (callReady) "Ingeschakeld" else "Ingeschakeld, niet gereed", callReady)
+                                        if (smsEnabled && shareGps) StatusRow("Locatie delen", "Ingeschakeld", true)
                                     }
                                 }
                             }
@@ -495,10 +508,13 @@ class MainActivity : ComponentActivity() {
                                     if (!enabled) {
                                         startService(Intent(this@MainActivity, ListeningService::class.java)
                                             .setAction(ListeningService.STOP))
-                                    } else if (!microphoneAllowed || !notificationsAllowed || (smsEnabled && !smsReady)) {
+                                    } else if (!microphoneAllowed || !notificationsAllowed ||
+                                        (smsEnabled && !smsReady) || (callEnabled && !callReady)
+                                    ) {
                                         message = when {
                                             !microphoneAllowed -> "Geef eerst microfoontoegang via Instellingen."
                                             !notificationsAllowed -> "Geef eerst meldingentoegang via Instellingen."
+                                            callEnabled && !callReady -> "Controleer de belmachtiging en het eerste contact."
                                             else -> "Stel eerst SMS-contact, SIM en machtigingen in via Acties."
                                         }
                                     } else {
@@ -554,6 +570,7 @@ class MainActivity : ComponentActivity() {
                                 permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
                             }) { Text("Vraag microfoontoegang") }
                             if (smsEnabled && !smsReady) Text("De SMS-actie is nog niet ingesteld. Configureer deze onder Acties om spraakdetectie te starten.")
+                            if (callEnabled && !callReady) Text("De belactie is nog niet gereed. Controleer de belmachtiging en het eerste contact.")
                             HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
@@ -703,43 +720,6 @@ class MainActivity : ComponentActivity() {
                                 Column(Modifier.fillMaxWidth().padding(start = 16.dp),
                                     verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     HorizontalDivider()
-                                    Text("Noodcontacten", style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold)
-                                    contacts.forEach { contact ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                            Text("${contact.name}: ${contact.number}", modifier = Modifier.weight(1f))
-                                            TextButton(onClick = {
-                                                contacts = contacts - contact
-                                                settings.contacts = contacts
-                                            }) { Text("Verwijder") }
-                                        }
-                                    }
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                        OutlinedTextField(name, { name = it }, label = { Text("Naam") }, singleLine = true,
-                                            modifier = Modifier.weight(1f))
-                                        IconButton(onClick = {
-                                            if (contactsAllowed) contactPicker.launch(null)
-                                            else contactPermission.launch(Manifest.permission.READ_CONTACTS)
-                                        }) {
-                                            Icon(Icons.Outlined.Contacts, contentDescription = "Contact kiezen")
-                                        }
-                                    }
-                                    OutlinedTextField(number, { number = it }, label = { Text("Telefoonnummer met landcode") },
-                                        singleLine = true, modifier = Modifier.fillMaxWidth())
-                                    Button(onClick = {
-                                        val normalized = android.telephony.PhoneNumberUtils.normalizeNumber(number)
-                                        if (name.isBlank() || !SmsAlertSender.validNumber(normalized)) {
-                                            message = "Vul een naam en internationaal nummer in (+ en 8-15 cijfers)."
-                                        } else if (contacts.any { it.number == normalized }) {
-                                            message = "Dit telefoonnummer is al opgeslagen."
-                                        } else {
-                                            contacts = contacts + FamilyContact(name.trim(), normalized)
-                                            settings.contacts = contacts
-                                            name = ""
-                                            number = ""
-                                            message = "Contact opgeslagen."
-                                        }
-                                    }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
                                     if (subscriptions.size != 1) {
                                         Text("SIM voor alarm-SMS", fontWeight = FontWeight.SemiBold)
                                         if (subscriptions.isEmpty()) Text("Geen actieve SIM gevonden of geen telefoontoestemming.")
@@ -753,48 +733,107 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                     }
-                                    Button(onClick = {
-                                        settings.simId = selectedSim
-                                        message = "SMS-instellingen opgeslagen."
-                                    }, modifier = Modifier.fillMaxWidth()) { Text("Bewaar SMS-instellingen") }
                                     if (!smsAllowed) {
                                         Text("SMS-toestemming is nodig om berichten te versturen.", color = Color(0xFFC62828))
                                         OutlinedButton(onClick = {
                                             permissions.launch(arrayOf(Manifest.permission.SEND_SMS))
                                         }) { Text("Vraag SMS-toestemming") }
                                     }
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("Locatie delen", fontWeight = FontWeight.SemiBold)
+                                            Text(if (shareGps) "Een recente nauwkeurige GPS-locatie wordt aan het alarmbericht toegevoegd wanneer die beschikbaar is."
+                                                else "Er wordt geen GPS-locatie aan het alarmbericht toegevoegd.",
+                                                style = MaterialTheme.typography.bodySmall)
+                                        }
+                                        Switch(checked = shareGps, onCheckedChange = {
+                                            shareGps = it
+                                            settings.shareLocation = it
+                                        })
+                                    }
+                                    if (shareGps && !fineAllowed) OutlinedButton(onClick = {
+                                        permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION))
+                                    }) { Text("Vraag locatietoegang") }
+                                    if (shareGps && fineAllowed && !backgroundAllowed) {
+                                        Text("Kies bij locatierechten voor 'Altijd toestaan' om GPS tijdens een alarm te gebruiken.")
+                                        OutlinedButton(onClick = {
+                                            startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                                Uri.parse("package:$packageName")))
+                                        }) { Text("Open app-instellingen") }
+                                    }
                                 }
                             }
-                            HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Locatie delen", fontWeight = FontWeight.SemiBold)
-                                    Text(if (shareGps) "Een recente nauwkeurige GPS-locatie wordt aan het alarmbericht toegevoegd wanneer die beschikbaar is."
-                                        else "Er wordt geen GPS-locatie aan het alarmbericht toegevoegd.",
+                                    Text("Contact bellen", fontWeight = FontWeight.SemiBold)
+                                    Text(if (callEnabled) "Het eerste noodcontact wordt gebeld via de telefoon-app." else "Er wordt niet gebeld.",
                                         style = MaterialTheme.typography.bodySmall)
                                 }
-                                Switch(checked = shareGps, onCheckedChange = {
-                                    shareGps = it
-                                    settings.shareLocation = it
+                                Switch(checked = callEnabled, onCheckedChange = { enabled ->
+                                    when {
+                                        !enabled -> {
+                                            callEnabled = false
+                                            settings.callEnabled = false
+                                            message = "Belactie uitgeschakeld."
+                                        }
+                                        !callPermissionAllowed ->
+                                            permissions.launch(arrayOf(Manifest.permission.CALL_PHONE))
+                                        else -> {
+                                            callEnabled = true
+                                            settings.callEnabled = true
+                                            message = "Belactie ingeschakeld."
+                                        }
+                                    }
                                 })
                             }
-                            if (shareGps && !fineAllowed) OutlinedButton(onClick = {
-                                permissions.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,
-                                    Manifest.permission.ACCESS_COARSE_LOCATION))
-                            }) { Text("Vraag locatietoegang") }
-                            if (shareGps && fineAllowed && !backgroundAllowed) {
-                                Text("Kies bij locatierechten voor 'Altijd toestaan' om GPS tijdens een alarm te gebruiken.")
-                                OutlinedButton(onClick = {
-                                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                        Uri.parse("package:$packageName")))
-                                }) { Text("Open app-instellingen") }
+                            if (callEnabled && !callReady) Text("Bellen vereist de belmachtiging en een noodcontact met een geldig nummer.")
+                            if (message.isNotBlank()) Text(message)
+                        }
+                        3 -> {
+                            Text("Contacten", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                            contacts.forEach { contact ->
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    Text("${contact.name}: ${contact.number}", modifier = Modifier.weight(1f))
+                                    TextButton(onClick = {
+                                        contacts = contacts - contact
+                                        settings.contacts = contacts
+                                    }) { Text("Verwijder") }
+                                }
                             }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(name, { name = it }, label = { Text("Naam") }, singleLine = true,
+                                    modifier = Modifier.weight(1f))
+                                IconButton(onClick = {
+                                    if (contactsAllowed) contactPicker.launch(null)
+                                    else contactPermission.launch(Manifest.permission.READ_CONTACTS)
+                                }) {
+                                    Icon(Icons.Outlined.Contacts, contentDescription = "Contact kiezen")
+                                }
+                            }
+                            OutlinedTextField(number, { number = it }, label = { Text("Telefoonnummer met landcode") },
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Button(onClick = {
+                                val normalized = android.telephony.PhoneNumberUtils.normalizeNumber(number)
+                                if (name.isBlank() || !SmsAlertSender.validNumber(normalized)) {
+                                    message = "Vul een naam en internationaal nummer in (+ en 8-15 cijfers)."
+                                } else if (contacts.any { it.number == normalized }) {
+                                    message = "Dit telefoonnummer is al opgeslagen."
+                                } else {
+                                    contacts = contacts + FamilyContact(name.trim(), normalized)
+                                    settings.contacts = contacts
+                                    name = ""
+                                    number = ""
+                                    message = "Contact opgeslagen."
+                                }
+                            }, modifier = Modifier.fillMaxWidth()) { Text("Voeg contact toe") }
                             if (message.isNotBlank()) Text(message)
                         }
                         else -> {
                             Text("Instellingen", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                             Text("Machtigingen", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                             permissionStatuses.forEach { (label, granted) -> PermissionStatusRow(label, granted) }
+                            PermissionStatusRow("Belmachtiging", callPermissionAllowed)
                             if (backgroundRestricted) {
                                 Text("Sta e-SOS toe om op de achtergrond actief te blijven.")
                                 OutlinedButton(onClick = openAppSettings,

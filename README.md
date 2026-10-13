@@ -62,7 +62,23 @@ bevestigd. Het check-in-alarm gebruikt geen microfoon. Een SOS en een GPS-aanvul
 kunnen elk meerdere betaalde SMS-delen kosten. SMS vereist een actieve SIM,
 mobiel netwerk en de machtigingen SEND_SMS en READ_PHONE_STATE. "Verzonden" is
 niet hetzelfde als "afgeleverd" of "gelezen"; test contact en netwerk expliciet.
-Er is geen automatische oproep en nooit een noodnummeroproep.
+De acties **SMS versturen** en **Contact bellen** zijn onafhankelijk.
+**Locatie delen** staat standaard aan en verschijnt als ingesprongen instelling
+onder **SMS versturen** wanneer die actie aan staat. Zonder SMS-actie wordt geen
+GPS-locatie opgevraagd; een eerder opgeslagen locatiekeuze blijft behouden.
+Contacten worden bij toevoegen/verwijderen direct opgeslagen en SIM-keuze en schakelaars
+gelden direct, zonder aparte bewaarknop. Als bellen aan staat, belt een echt alarm
+eenmaal het eerste noodcontact, ook als SMS uit staat of mislukt. De SOS-test belt
+nooit. Bij een echt alarm klinkt na het aanbieden van de SMS aan alle contacten
+de opname `7-sms-verstuurd.mp3`; dit bevestigt geen aflevering. Een mislukte
+SMS-aanbieding krijgt geen gesproken succesmelding. Voor het bellen klinkt
+`8-bellen-contact.mp3` volledig; daarna wordt het contact gebeld. Annuleren
+tijdens deze opnames voorkomt de uitgestelde oproep. Bellen vereist `CALL_PHONE`, maar e-SOS hoeft niet de standaard telefoon-app
+te worden. De bestaande telefoon-app verzorgt het gesprek en de audioroute;
+e-SOS geeft beschikbare Bluetooth-gespreksapparaten voorrang en vraagt anders
+speakerphone aan, maar kan de uiteindelijke audioroute, automatische ophanging
+en audio-instructies tijdens het gesprek niet afdwingen zonder telefoonapp-rol.
+Er wordt nooit automatisch een noodnummer gekozen.
 
 `SEND_SMS` is op Android een hard beperkt recht. De installer moet het voor de
 app toestaan; daarna moet de gebruiker het recht nog zelf verlenen. Bij een direct

@@ -31,8 +31,10 @@ object AlertRuntime {
         val settings = AppSettings(app)
         val sms = SmsAlertSender(app, settings)
         if (coordinator?.state == AlertState.COUNTDOWN || coordinator?.state == AlertState.SENT) return false
-        if (settings.smsEnabled && !sms.ready()) return false
-        val sender = senderFor(settings, sms, isTest)
+        if (settings.smsEnabled && !sms.ready() &&
+            !(settings.callEnabled && PhoneCallAction.canStart(app, settings))) return false
+        if (settings.callEnabled && !settings.smsEnabled && !PhoneCallAction.canStart(app, settings)) return false
+        val sender = senderFor(app, settings, sms, isTest)
         coordinator?.reset()
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis)
         coordinator = alarm
@@ -107,20 +109,16 @@ object AlertRuntime {
         val active = coordinator
         if (active?.state == AlertState.COUNTDOWN) {
             active.tick()
-            if (active.state == AlertState.SENT || active.state == AlertState.ERROR) {
-                enterSosPhase(context, isTest)
-            }
         } else {
             val settings = AppSettings(context)
             val sms = SmsAlertSender(context, settings)
-            if (settings.smsEnabled && !sms.ready()) return
-            val recovered = AlertCoordinator(senderFor(settings, sms, isTest), AndroidIncidentLocation(context, settings), System::currentTimeMillis)
+            if (settings.smsEnabled && !sms.ready() &&
+                !(settings.callEnabled && PhoneCallAction.canStart(context, settings))) return
+            if (settings.callEnabled && !settings.smsEnabled && !PhoneCallAction.canStart(context, settings)) return
+            val recovered = AlertCoordinator(senderFor(context, settings, sms, isTest), AndroidIncidentLocation(context, settings), System::currentTimeMillis)
             coordinator = recovered
             recovered.start(reason, 0L)
             recovered.tick()
-            if (recovered.state == AlertState.SENT || recovered.state == AlertState.ERROR) {
-                enterSosPhase(context, isTest)
-            }
             handler.postDelayed({ recovered.tick(); recovered.reset() }, 20_001L)
         }
         notificationManager(context).cancel(101)
@@ -154,11 +152,33 @@ object AlertRuntime {
         Intent(context, AlarmDeadlineReceiver::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-    private fun senderFor(settings: AppSettings, sms: SmsAlertSender, isTest: Boolean): AlertSender = object : AlertSender {
-        override fun send(incidentId: Long, text: String) {
-            if (settings.smsEnabled) sms.send(incidentId, AlertMessageFormatter.format(isTest, text))
-        }
-    }
+    private fun senderFor(context: Context, settings: AppSettings, sms: SmsAlertSender, isTest: Boolean) =
+        SmsThenCallAlertSender(
+            smsEnabled = { settings.smsEnabled },
+            callEnabled = { settings.callEnabled },
+            isTest = isTest,
+            sendSms = { incidentId, text ->
+                sms.send(incidentId, AlertMessageFormatter.format(isTest, text))
+            },
+            startCall = { incidentId ->
+                if (!PhoneCallAction.canStart(context, settings)) {
+                    throw IllegalStateException("Belactie niet gereed; controleer belmachtiging en noodcontact")
+                }
+                val contact = settings.contacts.first()
+                AlertAudioPlayer.enqueue(context, R.raw.bellen_contact) {
+                    if (settings.sosModeActive && settings.callEnabled &&
+                        PhoneCallAction.canStart(context, settings)) {
+                        runCatching {
+                            PhoneCallAction.startEmergencyCall(context, contact, incidentId)
+                        }.onFailure {
+                            android.util.Log.e("AlertRuntime", "Unable to start SOS call", it)
+                        }
+                    }
+                }
+            },
+            onAlertStarted = { enterSosPhase(context, isTest) },
+            onSmsSent = { AlertAudioPlayer.enqueue(context, R.raw.sms_verstuurd) }
+        )
 
     private fun clearPending(context: Context) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().commit()

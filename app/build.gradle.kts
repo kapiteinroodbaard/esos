@@ -12,8 +12,8 @@ android {
         applicationId = "org.esos.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 18
-        versionName = "1.0.1"
+        versionCode = 25
+        versionName = "1.0.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }

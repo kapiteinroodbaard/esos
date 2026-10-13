@@ -44,6 +44,9 @@ class AppSettings(context: Context) {
     var smsEnabled: Boolean
         get() = prefs.getBoolean("smsEnabled", true)
         set(value) { prefs.edit().putBoolean("smsEnabled", value).apply() }
+    var callEnabled: Boolean
+        get() = prefs.getBoolean("callEnabled", false)
+        set(value) { prefs.edit().putBoolean("callEnabled", value).apply() }
     var speechDetectionEnabled: Boolean
         get() = prefs.getBoolean("speechDetectionEnabled", false)
         set(value) { prefs.edit().putBoolean("speechDetectionEnabled", value).apply() }
