@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,6 +65,45 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal fun moveEmergencyContact(contacts: List<FamilyContact>, from: Int, to: Int): List<FamilyContact> {
     if (from !in contacts.indices || to !in contacts.indices || from == to) return contacts
     return contacts.toMutableList().apply { add(to, removeAt(from)) }
+}
+
+@Composable
+private fun PhraseEditor(
+    title: String,
+    noun: String,
+    phrases: List<String>,
+    onChange: (List<String>) -> Unit,
+    onMessage: (String) -> Unit
+) {
+    var input by remember { mutableStateOf("") }
+    Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    if (phrases.isEmpty()) Text("Geen $noun" + "nen ingesteld.")
+    phrases.forEach { phrase ->
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            Text(phrase, modifier = Modifier.weight(1f))
+            TextButton(onClick = {
+                onChange(phrases - phrase)
+                onMessage("Wijzigingen gelden na opnieuw starten van spraakdetectie.")
+            }) { Text("Verwijder") }
+        }
+    }
+    OutlinedTextField(input, { input = it }, label = { Text("Nieuwe $noun") }, singleLine = true,
+        modifier = Modifier.fillMaxWidth())
+    Button(onClick = {
+        val phrase = WakePhrases.unique(listOf(input)).firstOrNull()
+        when {
+            phrase == null -> onMessage("Voer een $noun in.")
+            phrases.any { WakePhrases.normalize(it) == WakePhrases.normalize(phrase) } ->
+                onMessage("Deze $noun staat al in de lijst.")
+            else -> {
+                onChange(WakePhrases.unique(phrases + phrase))
+                input = ""
+                onMessage("${noun.replaceFirstChar { it.uppercase() }} opgeslagen. Herstart spraakdetectie om deze toe te passen.")
+            }
+        }
+    }, enabled = input.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+        Text("${noun.replaceFirstChar { it.uppercase() }} toevoegen")
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -191,9 +231,14 @@ class MainActivity : ComponentActivity() {
         var selectedSim by remember { mutableIntStateOf(settings.simId) }
         var shareGps by remember { mutableStateOf(settings.shareLocation) }
         var wakePhrases by remember { mutableStateOf(settings.wakePhrases) }
-        var wakePhraseInput by remember { mutableStateOf("") }
+        var cancelPhrases by remember { mutableStateOf(settings.cancelPhrases) }
         var smsEnabled by remember { mutableStateOf(settings.smsEnabled) }
         var callEnabled by remember { mutableStateOf(settings.callEnabled) }
+        var spokenFeedbackEnabled by remember { mutableStateOf(settings.spokenFeedbackEnabled) }
+        var alarmSoundEnabled by remember { mutableStateOf(settings.alarmSoundEnabled) }
+        var alarmSoundMode by remember { mutableStateOf(settings.alarmSoundMode) }
+        var vibrationEnabled by remember { mutableStateOf(settings.vibrationEnabled) }
+        var vibrationContinuous by remember { mutableStateOf(settings.vibrationContinuous) }
         var manualSosTestVisible by remember { mutableStateOf(false) }
         var fallDetectionOn by remember { mutableStateOf(settings.fallDetectionEnabled) }
         var fallSensitivity by remember { mutableIntStateOf(settings.fallSensitivity) }
@@ -586,7 +631,7 @@ class MainActivity : ComponentActivity() {
                             }
                             val showSpeechStatus = listeningState != ListeningState.STOPPED
                             val hasDetectionStatuses = showSpeechStatus || fallDetectionOn || inactivityEnabled
-                            val hasActionStatuses = smsEnabled || callEnabled
+                            val hasActionStatuses = smsEnabled || callEnabled || alarmSoundEnabled || vibrationEnabled
                             ElevatedCard(Modifier.fillMaxWidth()) {
                                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                                     Text(protectionTitle, fontSize = 23.sp, fontWeight = FontWeight.Bold,
@@ -599,6 +644,8 @@ class MainActivity : ComponentActivity() {
                                         HorizontalDivider()
                                         Text("Detectie", style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold)
+                                        if (inactivityEnabled) StatusRow("Inactiviteitsbewaking",
+                                            "Actief ($inactivityHours uur)", true)
                                         if (showSpeechStatus) {
                                             StatusRow("Spraakdetectie", when (listeningState) {
                                                 ListeningState.LISTENING -> "Actief"
@@ -616,17 +663,21 @@ class MainActivity : ComponentActivity() {
                                             if (fallDetail.isNotBlank()) Text(fallDetail,
                                                 style = MaterialTheme.typography.bodySmall)
                                         }
-                                        if (inactivityEnabled) StatusRow("Inactiviteitsbewaking",
-                                            "Actief ($inactivityHours uur)", true)
                                     }
                                     if (hasActionStatuses) {
                                         if (hasDetectionStatuses) HorizontalDivider()
                                         Text("Acties", style = MaterialTheme.typography.titleMedium,
                                             fontWeight = FontWeight.SemiBold)
-                                        if (smsEnabled) StatusRow("SMS-actie",
-                                            if (smsReady) "Ingeschakeld" else "Ingeschakeld, niet ingesteld", smsReady)
+                                        if (alarmSoundEnabled) StatusRow("Alarmgeluid", when (alarmSoundMode) {
+                                            AlarmSoundMode.HIGH_TONE -> "Hoge pieptoon"
+                                            AlarmSoundMode.MORSE_SOS -> "SOS in morse"
+                                        }, true)
                                         if (callEnabled) StatusRow("Belactie",
                                             if (callReady) "Ingeschakeld" else "Ingeschakeld, niet gereed", callReady)
+                                        if (smsEnabled) StatusRow("SMS-actie",
+                                            if (smsReady) "Ingeschakeld" else "Ingeschakeld, niet ingesteld", smsReady)
+                                        if (vibrationEnabled) StatusRow("Trillen",
+                                            if (vibrationContinuous) "SOS in morse, continu" else "SOS in morse, eenmalig bij countdown", true)
                                         if (smsEnabled && shareGps) StatusRow("Locatie delen", "Ingeschakeld", true)
                                     }
                                 }
@@ -634,113 +685,6 @@ class MainActivity : ComponentActivity() {
                         }
                         1 -> {
                             Text("Detectie", fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Spraakdetectie", fontWeight = FontWeight.SemiBold)
-                                    Text("Herkent lokaal de ingestelde hulpzinnen.",
-                                        style = MaterialTheme.typography.bodySmall)
-                                }
-                                Switch(checked = voiceDetectionOn, onCheckedChange = { enabled ->
-                                    if (!enabled) {
-                                        startService(Intent(this@MainActivity, ListeningService::class.java)
-                                            .setAction(ListeningService.STOP))
-                                    } else if (!microphoneAllowed || !notificationsAllowed ||
-                                        (smsEnabled && !smsReady) || (callEnabled && !callReady)
-                                    ) {
-                                        message = when {
-                                            !microphoneAllowed -> "Geef eerst microfoontoegang via Instellingen."
-                                            !notificationsAllowed -> "Geef eerst meldingentoegang via Instellingen."
-                                            callEnabled && !callReady -> "Controleer de belmachtiging en het eerste contact."
-                                            else -> "Stel eerst SMS-contact, SIM en machtigingen in via Acties."
-                                        }
-                                    } else {
-                                        try {
-                                            ContextCompat.startForegroundService(this@MainActivity,
-                                                Intent(this@MainActivity, ListeningService::class.java)
-                                                    .setAction(ListeningService.START))
-                                            message = ""
-                                        } catch (_: RuntimeException) {
-                                            message = "Spraakdetectie kon niet starten; controleer de machtigingen."
-                                        }
-                                    }
-                                })
-                            }
-                            if (voiceDetectionOn) {
-                                Column(Modifier.fillMaxWidth().padding(start = 16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    Text("Alarm-zinnen", style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold)
-                                    if (wakePhrases.isEmpty()) Text("Geen alarm-zinnen ingesteld.")
-                                    wakePhrases.forEach { phrase ->
-                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                            Text(phrase, modifier = Modifier.weight(1f))
-                                            TextButton(onClick = {
-                                                wakePhrases = wakePhrases - phrase
-                                                settings.wakePhrases = wakePhrases
-                                                message = "Wijzigingen gelden na opnieuw starten van spraakdetectie."
-                                            }) { Text("Verwijder") }
-                                        }
-                                    }
-                                    OutlinedTextField(wakePhraseInput, { wakePhraseInput = it },
-                                        label = { Text("Nieuwe alarm-zin") }, singleLine = true,
-                                        modifier = Modifier.fillMaxWidth())
-                                    Button(onClick = {
-                                        val phrase = WakePhrases.unique(listOf(wakePhraseInput)).firstOrNull()
-                                        when {
-                                            phrase == null -> message = "Voer een alarm-zin in."
-                                            wakePhrases.any { WakePhrases.normalize(it) == WakePhrases.normalize(phrase) } ->
-                                                message = "Deze alarm-zin staat al in de lijst."
-                                            else -> {
-                                                wakePhrases = WakePhrases.unique(wakePhrases + phrase)
-                                                settings.wakePhrases = wakePhrases
-                                                wakePhraseInput = ""
-                                                message = "Alarm-zin opgeslagen. Herstart spraakdetectie om deze toe te passen."
-                                            }
-                                        }
-                                    }, enabled = wakePhraseInput.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                                        Text("Alarm-zin toevoegen")
-                                    }
-                                }
-                            }
-                            if (!microphoneAllowed) OutlinedButton(onClick = {
-                                permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
-                            }) { Text("Vraag microfoontoegang") }
-                            if (smsEnabled && !smsReady) Text("De SMS-actie is nog niet ingesteld. Configureer deze onder Acties om spraakdetectie te starten.")
-                            if (callEnabled && !callReady) Text("De belactie is nog niet gereed. Controleer de belmachtiging en het eerste contact.")
-                            HorizontalDivider()
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Valdetectie", fontWeight = FontWeight.SemiBold)
-                                    Text("Detecteert vrije val, impact en daarna stilstand met de versnellingsmeter.",
-                                        style = MaterialTheme.typography.bodySmall)
-                                }
-                                Switch(checked = fallDetectionOn, onCheckedChange = { enabled ->
-                                    if (!enabled) {
-                                        fallDetectionOn = false
-                                        settings.fallDetectionEnabled = false
-                                        FallDetectionService.stop(this@MainActivity)
-                                    } else {
-                                        val requestedPermissions = buildList {
-                                            if (!activityRecognitionAllowed) add(Manifest.permission.ACTIVITY_RECOGNITION)
-                                            if (!notificationsAllowed) add(Manifest.permission.POST_NOTIFICATIONS)
-                                        }
-                                        if (requestedPermissions.isEmpty()) enableFallDetection()
-                                        else fallPermissions.launch(requestedPermissions.toTypedArray())
-                                    }
-                                })
-                            }
-                            if (fallDetectionOn) {
-                                Text("Gevoeligheid: $fallSensitivity / 5", fontWeight = FontWeight.SemiBold)
-                                Slider(value = fallSensitivity.toFloat(), onValueChange = { value ->
-                                    fallSensitivity = value.toInt()
-                                    settings.fallSensitivity = fallSensitivity
-                                }, valueRange = 1f..5f, steps = 3)
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Minder gevoelig", style = MaterialTheme.typography.bodySmall)
-                                    Text("Meer gevoelig", style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                            HorizontalDivider()
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("Inactiviteitsbewaking", fontWeight = FontWeight.SemiBold)
@@ -808,6 +752,89 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             HorizontalDivider()
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Spraakdetectie", fontWeight = FontWeight.SemiBold)
+                                    Text("Herkent lokaal de ingestelde alarm- en annuleer-zinnen.",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = voiceDetectionOn, onCheckedChange = { enabled ->
+                                    if (!enabled) {
+                                        startService(Intent(this@MainActivity, ListeningService::class.java)
+                                            .setAction(ListeningService.STOP))
+                                    } else if (!microphoneAllowed || !notificationsAllowed ||
+                                        (smsEnabled && !smsReady) || (callEnabled && !callReady)
+                                    ) {
+                                        message = when {
+                                            !microphoneAllowed -> "Geef eerst microfoontoegang via Instellingen."
+                                            !notificationsAllowed -> "Geef eerst meldingentoegang via Instellingen."
+                                            callEnabled && !callReady -> "Controleer de belmachtiging en het eerste contact."
+                                            else -> "Stel eerst SMS-contact, SIM en machtigingen in via Acties."
+                                        }
+                                    } else {
+                                        try {
+                                            ContextCompat.startForegroundService(this@MainActivity,
+                                                Intent(this@MainActivity, ListeningService::class.java)
+                                                    .setAction(ListeningService.START))
+                                            message = ""
+                                        } catch (_: RuntimeException) {
+                                            message = "Spraakdetectie kon niet starten; controleer de machtigingen."
+                                        }
+                                    }
+                                })
+                            }
+                            if (voiceDetectionOn) {
+                                Column(Modifier.fillMaxWidth().padding(start = 16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    PhraseEditor("Alarm-zinnen", "alarm-zin", wakePhrases, onChange = {
+                                        wakePhrases = it
+                                        settings.wakePhrases = it
+                                    }, onMessage = { message = it })
+                                    PhraseEditor("Annuleer-zinnen", "annuleer-zin", cancelPhrases, onChange = {
+                                        cancelPhrases = it
+                                        settings.cancelPhrases = it
+                                    }, onMessage = { message = it })
+                                }
+                            }
+                            if (!microphoneAllowed) OutlinedButton(onClick = {
+                                permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+                            }) { Text("Vraag microfoontoegang") }
+                            if (smsEnabled && !smsReady) Text("De SMS-actie is nog niet ingesteld. Configureer deze onder Acties om spraakdetectie te starten.")
+                            if (callEnabled && !callReady) Text("De belactie is nog niet gereed. Controleer de belmachtiging en het eerste contact.")
+                            HorizontalDivider()
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Valdetectie", fontWeight = FontWeight.SemiBold)
+                                    Text("Detecteert vrije val, impact en daarna stilstand met de versnellingsmeter.",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = fallDetectionOn, onCheckedChange = { enabled ->
+                                    if (!enabled) {
+                                        fallDetectionOn = false
+                                        settings.fallDetectionEnabled = false
+                                        FallDetectionService.stop(this@MainActivity)
+                                    } else {
+                                        val requestedPermissions = buildList {
+                                            if (!activityRecognitionAllowed) add(Manifest.permission.ACTIVITY_RECOGNITION)
+                                            if (!notificationsAllowed) add(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
+                                        if (requestedPermissions.isEmpty()) enableFallDetection()
+                                        else fallPermissions.launch(requestedPermissions.toTypedArray())
+                                    }
+                                })
+                            }
+                            if (fallDetectionOn) {
+                                Text("Gevoeligheid: $fallSensitivity / 5", fontWeight = FontWeight.SemiBold)
+                                Slider(value = fallSensitivity.toFloat(), onValueChange = { value ->
+                                    fallSensitivity = value.toInt()
+                                    settings.fallSensitivity = fallSensitivity
+                                }, valueRange = 1f..5f, steps = 3)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Minder gevoelig", style = MaterialTheme.typography.bodySmall)
+                                    Text("Meer gevoelig", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            HorizontalDivider()
                             if (activeState == AlertState.COUNTDOWN) {
                                 Text("SOS-alarm over $remaining seconden", fontSize = 23.sp,
                                     fontWeight = FontWeight.Bold)
@@ -841,6 +868,75 @@ class MainActivity : ComponentActivity() {
                         2 -> {
                             Text("Acties", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                             Text("Kies welke acties e-SOS bij een alarm uitvoert.")
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Alarmgeluid afspelen", fontWeight = FontWeight.SemiBold)
+                                    Text(if (alarmSoundEnabled) "Tijdens SOS klinkt een luid signaal over de speaker, op maximaal alarmvolume."
+                                        else "Er klinkt geen alarmgeluid.",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = alarmSoundEnabled, onCheckedChange = {
+                                    alarmSoundEnabled = it
+                                    settings.alarmSoundEnabled = it
+                                    if (!it && !sosModeActive) SosSignals.stop(this@MainActivity)
+                                })
+                            }
+                            if (alarmSoundEnabled) {
+                                Column(Modifier.fillMaxWidth().padding(start = 16.dp)) {
+                                    listOf(AlarmSoundMode.HIGH_TONE to "Hoge, luide pieptoon",
+                                        AlarmSoundMode.MORSE_SOS to "Luide pieptoon in morse: SOS").forEach { (mode, label) ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            RadioButton(selected = alarmSoundMode == mode, onClick = {
+                                                alarmSoundMode = mode
+                                                settings.alarmSoundMode = mode
+                                            })
+                                            Text(label)
+                                        }
+                                    }
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Contacten bellen", fontWeight = FontWeight.SemiBold)
+                                    Text(if (callEnabled) "Het eerste contact wordt direct gebeld; daarna elke 15 minuten het volgende, zolang SOS actief is."
+                                        else "Er wordt niet gebeld.",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = callEnabled, onCheckedChange = { enabled ->
+                                    when {
+                                        !enabled -> {
+                                            callEnabled = false
+                                            settings.callEnabled = false
+                                            SosCallScheduler.cancel(this@MainActivity)
+                                            message = "Belactie uitgeschakeld."
+                                        }
+                                        !callPermissionAllowed ->
+                                            permissions.launch(arrayOf(Manifest.permission.CALL_PHONE))
+                                        else -> {
+                                            callEnabled = true
+                                            settings.callEnabled = true
+                                            message = "Belactie ingeschakeld."
+                                        }
+                                    }
+                                })
+                            }
+                            if (callEnabled && !callReady) Text("Bellen vereist de belmachtiging en een noodcontact met een geldig nummer.")
+                            if (callEnabled && !exactAlarmsAllowed) {
+                                Text("Zonder exacte alarmen kan Android de volgende belpoging uitstellen.")
+                                OutlinedButton(onClick = openExactAlarmSettings) { Text("Sta exacte alarmen toe") }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Gesproken feedback", fontWeight = FontWeight.SemiBold)
+                                    Text(if (spokenFeedbackEnabled) "e-SOS spreekt meldingen uit, zoals het begin en einde van de noodprocedure."
+                                        else "e-SOS blijft stil; alleen alarmgeluiden klinken.",
+                                        style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = spokenFeedbackEnabled, onCheckedChange = {
+                                    spokenFeedbackEnabled = it
+                                    settings.spokenFeedbackEnabled = it
+                                })
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
                                     Text("SMS versturen", fontWeight = FontWeight.SemiBold)
@@ -902,33 +998,29 @@ class MainActivity : ComponentActivity() {
                             }
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Contacten bellen", fontWeight = FontWeight.SemiBold)
-                                    Text(if (callEnabled) "Het eerste contact wordt direct gebeld; daarna elke 15 minuten het volgende, zolang SOS actief is."
-                                        else "Er wordt niet gebeld.",
+                                    Text("Trillen in morse: SOS", fontWeight = FontWeight.SemiBold)
+                                    Text(if (vibrationEnabled) "De telefoon trilt het patroon ··· −−− ···, zie de opties hieronder."
+                                        else "De telefoon trilt niet.",
                                         style = MaterialTheme.typography.bodySmall)
                                 }
-                                Switch(checked = callEnabled, onCheckedChange = { enabled ->
-                                    when {
-                                        !enabled -> {
-                                            callEnabled = false
-                                            settings.callEnabled = false
-                                            SosCallScheduler.cancel(this@MainActivity)
-                                            message = "Belactie uitgeschakeld."
-                                        }
-                                        !callPermissionAllowed ->
-                                            permissions.launch(arrayOf(Manifest.permission.CALL_PHONE))
-                                        else -> {
-                                            callEnabled = true
-                                            settings.callEnabled = true
-                                            message = "Belactie ingeschakeld."
-                                        }
-                                    }
+                                Switch(checked = vibrationEnabled, onCheckedChange = {
+                                    vibrationEnabled = it
+                                    settings.vibrationEnabled = it
+                                    if (!it && !sosModeActive) SosSignals.stop(this@MainActivity)
                                 })
                             }
-                            if (callEnabled && !callReady) Text("Bellen vereist de belmachtiging en een noodcontact met een geldig nummer.")
-                            if (callEnabled && !exactAlarmsAllowed) {
-                                Text("Zonder exacte alarmen kan Android de volgende belpoging uitstellen.")
-                                OutlinedButton(onClick = openExactAlarmSettings) { Text("Sta exacte alarmen toe") }
+                            if (vibrationEnabled) {
+                                Column(Modifier.fillMaxWidth().padding(start = 16.dp)) {
+                                    listOf(false to "Eenmalig bij start van de countdown", true to "Continu zodra SOS echt is getriggerd, tot annuleren").forEach { (continuous, label) ->
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            RadioButton(selected = vibrationContinuous == continuous, onClick = {
+                                                vibrationContinuous = continuous
+                                                settings.vibrationContinuous = continuous
+                                            })
+                                            Text(label)
+                                        }
+                                    }
+                                }
                             }
                             if (message.isNotBlank()) Text(message)
                         }
@@ -1024,8 +1116,10 @@ class MainActivity : ComponentActivity() {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             Text("●", color = if (active) Color(0xFF218739) else Color(0xFF9D2727), fontSize = 12.sp)
             Spacer(Modifier.width(10.dp))
-            Text(label, modifier = Modifier.weight(1f))
-            Text(value, fontWeight = FontWeight.SemiBold)
+            Text(label)
+            Spacer(Modifier.width(12.dp))
+            Text(value, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.End,
+                modifier = Modifier.weight(1f))
         }
     }
 }

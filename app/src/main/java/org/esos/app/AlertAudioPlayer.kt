@@ -16,6 +16,7 @@ object AlertAudioPlayer {
     private var player: MediaPlayer? = null
 
     fun play(context: Context, vararg resources: Int) {
+        if (!AppSettings(context).spokenFeedbackEnabled) return
         onMainThread {
             releaseCurrent()
             pendingResources.clear()
@@ -26,6 +27,10 @@ object AlertAudioPlayer {
     }
 
     fun enqueue(context: Context, resource: Int, onComplete: () -> Unit = {}) {
+        if (!AppSettings(context).spokenFeedbackEnabled) {
+            onMainThread(onComplete)
+            return
+        }
         onMainThread {
             appContext = context.applicationContext
             pendingResources.addLast(Announcement(resource, onComplete))

@@ -39,6 +39,7 @@ object AlertRuntime {
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis)
         coordinator = alarm
         if (!alarm.start(reason, countdownMillis)) return false
+        if (!isTest) SosSignals.announce(app)
         if (!isTest && countdownMillis > 0L) {
             countdownAnnouncement(reason)?.let { AlertAudioPlayer.play(app, it) }
         }
@@ -72,6 +73,7 @@ object AlertRuntime {
         settings.sosModeActive = false
         SosCallScheduler.cancel(context)
         SosOverlay.stop(context)
+        SosSignals.stop(context)
         clearPending(context)
         coordinator?.reset()
         notificationManager(context).cancel(101)
@@ -94,6 +96,7 @@ object AlertRuntime {
         if (AppSettings(context).sosModeActive) {
             showActiveSosNotification(context)
             SosOverlay.start(context)
+            SosSignals.start(context, restoring = true)
         }
     }
 
@@ -135,6 +138,7 @@ object AlertRuntime {
         showActiveSosNotification(context)
         SosOverlay.start(context)
         AlertAudioPlayer.play(context, R.raw.noodprocedure_gestart)
+        SosSignals.start(context)
     }
 
     private fun showActiveSosNotification(context: Context) {

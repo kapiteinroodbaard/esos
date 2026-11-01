@@ -94,7 +94,7 @@ class ListeningService : Service() {
         try {
             val dutch = ModelAssets.unpack(this, "vosk-model-small-nl-0.22") { active }
             if (!active) return
-            VoskDetector(dutch, AppSettings(this).wakePhrases).use { detector ->
+            AppSettings(this).let { VoskDetector(dutch, it.wakePhrases, it.cancelPhrases) }.use { detector ->
                 val minimum = AudioRecord.getMinBufferSize(SAMPLE_RATE,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
                 require(minimum > 0) { "16 kHz microfoon niet beschikbaar" }
@@ -172,7 +172,10 @@ class ListeningService : Service() {
                             continue
                         }
                         emptyReads = 0
-                        if (detector.acceptPcm16(samples, count)) {
+                        val event = detector.acceptPcm16(samples, count)
+                        if (event == DetectionEvent.CANCEL) {
+                            mainHandler.post { if (active) AlertRuntime.cancel(this) }
+                        } else if (event == DetectionEvent.ALARM) {
                             mainHandler.post {
                                 if (active && AlertRuntime.state() != AlertState.COUNTDOWN &&
                                     AlertRuntime.state() != AlertState.SENT &&

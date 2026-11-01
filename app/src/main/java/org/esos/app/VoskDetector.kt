@@ -11,7 +11,9 @@ import java.io.File
 class VoskDetector(
     dutchDirectory: File,
     wakePhrases: List<String> = WakePhrases.DEFAULTS,
+    cancelPhrases: List<String> = WakePhrases.CANCEL_DEFAULTS,
     private val matcher: PhraseMatcher = PhraseMatcher(phrases = wakePhrases),
+    private val cancelMatcher: PhraseMatcher = PhraseMatcher(debounceMillis = 0L, phrases = cancelPhrases),
     private val now: () -> Long = System::currentTimeMillis
 ) : OfflineDetector {
     private val dutch: Model
@@ -22,7 +24,7 @@ class VoskDetector(
         dutch = Model(dutchDirectory.absolutePath)
         try {
             val grammar = JSONArray()
-            WakePhrases.unique(wakePhrases).forEach { grammar.put(WakePhrases.normalize(it)) }
+            WakePhrases.unique(wakePhrases + cancelPhrases).forEach { grammar.put(WakePhrases.normalize(it)) }
             grammar.put("[unk]")
             dutchRecognizer = Recognizer(dutch, 16_000f, grammar.toString())
         } catch (error: Exception) {
@@ -31,11 +33,16 @@ class VoskDetector(
         }
     }
 
-    override fun acceptPcm16(samples: ShortArray, count: Int): Boolean {
+    override fun acceptPcm16(samples: ShortArray, count: Int): DetectionEvent {
         require(count in 0..samples.size)
         val dutchComplete = dutchRecognizer.acceptWaveForm(samples, count)
         val dutchText = if (dutchComplete) JSONObject(dutchRecognizer.result).optString("text") else ""
-        return matcher.matches(dutchText, now())
+        val time = now()
+        return when {
+            cancelMatcher.matches(dutchText, time) -> DetectionEvent.CANCEL
+            matcher.matches(dutchText, time) -> DetectionEvent.ALARM
+            else -> DetectionEvent.NONE
+        }
     }
 
     override fun reset() {

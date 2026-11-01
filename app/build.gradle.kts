@@ -12,8 +12,8 @@ android {
         applicationId = "org.esos.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.0.11"
+        versionCode = 32
+        versionName = "1.1.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
@@ -38,6 +38,16 @@ tasks.register<Copy>("exportDebugApk") {
     from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
     into(rootProject.layout.projectDirectory.dir("dist"))
     rename { "eSOS-v$semanticVersion.apk" }
+    finalizedBy("syncDebugApk")
+}
+
+tasks.register<Copy>("syncDebugApk") {
+    group = "distribution"
+    description = "Copy the exported APK to the Sync apps folder"
+    val target = File(System.getProperty("user.home"), "Sync/apps/Apks")
+    from(rootProject.layout.projectDirectory.file("dist/eSOS-v$semanticVersion.apk"))
+    into(target)
+    onlyIf { target.isDirectory }
 }
 
 dependencies {

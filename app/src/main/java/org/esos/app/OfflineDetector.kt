@@ -1,12 +1,15 @@
 package org.esos.app
 
+enum class DetectionEvent { NONE, ALARM, CANCEL }
+
 interface OfflineDetector : AutoCloseable {
-    fun acceptPcm16(samples: ShortArray, count: Int): Boolean
+    fun acceptPcm16(samples: ShortArray, count: Int): DetectionEvent
     fun reset()
 }
 
 object WakePhrases {
     val DEFAULTS = listOf("Help mij", "Ik heb hulp nodig", "Help Help", "Help me")
+    val CANCEL_DEFAULTS = listOf("Annuleer alarm", "Vals alarm", "Alles is goed")
 
     fun normalize(phrase: String): String = phrase.lowercase().trim()
         .replace(Regex("[.,!?]+"), "")

@@ -47,6 +47,22 @@ class AppSettings(context: Context) {
     var callEnabled: Boolean
         get() = prefs.getBoolean("callEnabled", false)
         set(value) { prefs.edit().putBoolean("callEnabled", value).apply() }
+    var spokenFeedbackEnabled: Boolean
+        get() = prefs.getBoolean("spokenFeedbackEnabled", true)
+        set(value) { prefs.edit().putBoolean("spokenFeedbackEnabled", value).apply() }
+    var alarmSoundEnabled: Boolean
+        get() = prefs.getBoolean("alarmSoundEnabled", false)
+        set(value) { prefs.edit().putBoolean("alarmSoundEnabled", value).apply() }
+    var alarmSoundMode: AlarmSoundMode
+        get() = runCatching { AlarmSoundMode.valueOf(prefs.getString("alarmSoundMode", "") ?: "") }
+            .getOrDefault(AlarmSoundMode.HIGH_TONE)
+        set(value) { prefs.edit().putString("alarmSoundMode", value.name).apply() }
+    var vibrationEnabled: Boolean
+        get() = prefs.getBoolean("vibrationEnabled", false)
+        set(value) { prefs.edit().putBoolean("vibrationEnabled", value).apply() }
+    var vibrationContinuous: Boolean
+        get() = prefs.getBoolean("vibrationContinuous", false)
+        set(value) { prefs.edit().putBoolean("vibrationContinuous", value).apply() }
     var speechDetectionEnabled: Boolean
         get() = prefs.getBoolean("speechDetectionEnabled", false)
         set(value) { prefs.edit().putBoolean("speechDetectionEnabled", value).apply() }
@@ -62,6 +78,19 @@ class AppSettings(context: Context) {
             val entries = JSONArray()
             WakePhrases.unique(value).forEach(entries::put)
             prefs.edit().putString("wakePhrases", entries.toString()).apply()
+        }
+    var cancelPhrases: List<String>
+        get() {
+            val stored = prefs.getString("cancelPhrases", null) ?: return WakePhrases.CANCEL_DEFAULTS
+            return runCatching {
+                val entries = JSONArray(stored)
+                WakePhrases.unique((0 until entries.length()).map { entries.getString(it) })
+            }.getOrDefault(WakePhrases.CANCEL_DEFAULTS)
+        }
+        set(value) {
+            val entries = JSONArray()
+            WakePhrases.unique(value).forEach(entries::put)
+            prefs.edit().putString("cancelPhrases", entries.toString()).apply()
         }
     var sosModeActive: Boolean
         get() = prefs.getBoolean("sosModeActive", false)
