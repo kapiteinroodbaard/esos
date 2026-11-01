@@ -39,7 +39,7 @@ object AlertRuntime {
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis)
         coordinator = alarm
         if (!alarm.start(reason, countdownMillis)) return false
-        if (!isTest) SosSignals.announce(app)
+        SosSignals.announce(app)
         if (!isTest && countdownMillis > 0L) {
             countdownAnnouncement(reason)?.let { AlertAudioPlayer.play(app, it) }
         }
@@ -59,6 +59,7 @@ object AlertRuntime {
         val settings = AppSettings(context)
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val hasPendingAlarm = prefs.contains("deadline")
+        if (SosSignals.running && !settings.sosModeActive) SosSignals.stop(context)
         val cancelledCountdown = coordinator?.cancel() == true
         val sosWasActive = settings.sosModeActive
         if (!cancelledCountdown && !sosWasActive && !hasPendingAlarm) return false
@@ -133,7 +134,10 @@ object AlertRuntime {
     }
 
     private fun enterSosPhase(context: Context, isTest: Boolean) {
-        if (isTest) return
+        if (isTest) {
+            SosSignals.startTest(context)
+            return
+        }
         AppSettings(context).sosModeActive = true
         showActiveSosNotification(context)
         SosOverlay.start(context)

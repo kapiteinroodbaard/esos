@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,9 +14,24 @@ android {
         applicationId = "org.esos.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 32
-        versionName = "1.1.4"
+        versionCode = 34
+        versionName = "1.1.6"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    signingConfigs {
+        val propertiesFile = File(System.getProperty("user.home"), ".android-toolchain/esos-signing.properties")
+        if (propertiesFile.isFile) {
+            val signing = Properties().apply { propertiesFile.inputStream().use { load(it) } }
+            create("release") {
+                storeFile = file(signing.getProperty("storeFile"))
+                storePassword = signing.getProperty("storePassword")
+                keyAlias = signing.getProperty("keyAlias")
+                keyPassword = signing.getProperty("keyPassword")
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig = signingConfigs.findByName("release") }
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -36,6 +53,16 @@ tasks.register<Copy>("exportDebugApk") {
     description = "Build and export the debug APK as eSOS-v<version>.apk"
     dependsOn("assembleDebug")
     from(layout.buildDirectory.file("outputs/apk/debug/app-debug.apk"))
+    into(rootProject.layout.projectDirectory.dir("dist"))
+    rename { "eSOS-v$semanticVersion.apk" }
+    finalizedBy("syncDebugApk")
+}
+
+tasks.register<Copy>("exportReleaseApk") {
+    group = "distribution"
+    description = "Build and export the signed release APK as eSOS-v<version>.apk"
+    dependsOn("assembleRelease")
+    from(layout.buildDirectory.file("outputs/apk/release/app-release.apk"))
     into(rootProject.layout.projectDirectory.dir("dist"))
     rename { "eSOS-v$semanticVersion.apk" }
     finalizedBy("syncDebugApk")
