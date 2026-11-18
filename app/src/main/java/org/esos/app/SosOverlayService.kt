@@ -17,6 +17,8 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.os.IBinder
 import android.provider.Settings
+import android.hardware.display.DisplayManager
+import android.view.Display
 import android.view.Gravity
 import android.view.RoundedCorner
 import android.view.View
@@ -49,7 +51,8 @@ private class SosBorderView(context: Context, private val thickness: Float) : Vi
     }
 
     private fun screenCorners(): SosBorderCorners {
-        val display = context.display
+        // context.display werkt niet met de applicatiecontext; vraag het standaardscherm op via DisplayManager.
+        val display = context.getSystemService(DisplayManager::class.java)?.getDisplay(Display.DEFAULT_DISPLAY)
         fun radius(position: Int) = display?.getRoundedCorner(position)?.radius?.toFloat() ?: 0f
         return SosBorderCorners(radius(RoundedCorner.POSITION_TOP_LEFT), radius(RoundedCorner.POSITION_TOP_RIGHT),
             radius(RoundedCorner.POSITION_BOTTOM_RIGHT), radius(RoundedCorner.POSITION_BOTTOM_LEFT))

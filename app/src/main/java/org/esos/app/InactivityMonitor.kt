@@ -108,6 +108,14 @@ object InactivityMonitor {
         cancel(context)
     }
 
+    /** Een geannuleerd alarm is een teken van leven: de bewaking begint opnieuw. */
+    fun onAlertCancelled(context: Context) {
+        val settings = AppSettings(context)
+        if (!settings.inactivityEnabled || !settings.inactivityTriggered) return
+        onUserPresent(context)
+        if (!context.getSystemService(android.os.PowerManager::class.java).isInteractive) onScreenOff(context)
+    }
+
     fun schedule(context: Context) {
         val app = context.applicationContext
         val settings = AppSettings(app)

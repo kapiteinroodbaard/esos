@@ -74,6 +74,7 @@ object AlertRuntime {
         val hasPendingAlarm = prefs.contains("deadline")
         if (SosSignals.running && !settings.sosModeActive) SosSignals.stop(context)
         CountdownBeeper.stop()
+        InactivityMonitor.onAlertCancelled(context)
         val cancelledCountdown = coordinator?.cancel() == true
         val sosWasActive = settings.sosModeActive
         if (!cancelledCountdown && !sosWasActive && !hasPendingAlarm) return false

@@ -78,7 +78,8 @@ private fun CountdownScreen(remainingSeconds: Int, onOk: () -> Unit, onHelp: () 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(20.dp)
     ) {
-        Spacer(Modifier.height(16.dp))
+        // Ruimte bovenaan: een meldingsbanner mag de vraag niet bedekken.
+        Spacer(Modifier.height(160.dp))
         Text("Gaat het goed?", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Color.Black,
             textAlign = TextAlign.Center)
         Text("Anders waarschuwt e-SOS over", fontSize = 22.sp, color = Color.Black, textAlign = TextAlign.Center)

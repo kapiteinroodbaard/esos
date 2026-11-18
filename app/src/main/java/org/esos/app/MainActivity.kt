@@ -352,7 +352,7 @@ class MainActivity : ComponentActivity() {
             "Locatie" to fineAllowed,
             "Locatie altijd toestaan" to backgroundAllowed,
             "Op de achtergrond werken" to !backgroundRestricted,
-            "Batterijbesparing voor e-SOS uit" to batteryOptimizationDisabled,
+            "Batterijbesparing uit" to batteryOptimizationDisabled,
             "Energiebesparing uit" to !powerSaveMode
         )
         val otherBasePermissionsMissing = !phoneAllowed || !callPermissionAllowed || !notificationsAllowed ||
@@ -518,6 +518,10 @@ class MainActivity : ComponentActivity() {
                             else "Machtigingen, contact en SIM zijn ingesteld.")
                         if (message.isNotBlank()) Text(message)
                         Button(onClick = {
+                            if (callPermissionAllowed && !settings.callEnabled) {
+                                callEnabled = true
+                                settings.callEnabled = true
+                            }
                             settings.setupComplete = true
                             setupComplete = true
                         }, enabled = allSetupRequirementsMet && SmsAlertSender(this@MainActivity, settings).ready(),
@@ -546,8 +550,10 @@ class MainActivity : ComponentActivity() {
         }
 
         Scaffold(
-            modifier = Modifier.fillMaxSize().border(
-                if (sosModeActive) 8.dp else 0.dp, Color(0xFFFF1010)
+            // Een rand van 0 dp tekent in Compose toch een haarlijn, dus alleen tijdens SOS toevoegen,
+            // en alleen als de overlay-rand er niet al is.
+            modifier = Modifier.fillMaxSize().then(
+                if (sosModeActive && !overlayVisible) Modifier.border(8.dp, Color(0xFFFF1010)) else Modifier
             ),
             bottomBar = {
                 NavigationBar {
@@ -1031,9 +1037,8 @@ class MainActivity : ComponentActivity() {
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.width(32.dp)
             )
-            Text(label)
-            Spacer(Modifier.weight(1f))
-            Text(if (granted) "Verleend" else "Niet verleend",
+            Text(label, modifier = Modifier.weight(1f).padding(end = 12.dp))
+            Text(if (granted) "In orde" else "Regelen", fontWeight = FontWeight.SemiBold,
                 color = if (granted) Color(0xFF218739) else Color(0xFFC62828))
         }
     }
@@ -1155,8 +1160,8 @@ private fun HoldToConfirmSos(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("SOS", fontSize = 32.sp, fontWeight = FontWeight.Bold)
-                Text(if (isPressed) "Vasthouden: ${(3 - (progress.value * 3).toInt()).coerceIn(1, 3)} s" else "3 seconden ingedrukt houden")
+                Text("SOS", fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(color = Color.White, text = if (isPressed) "Vasthouden: ${(3 - (progress.value * 3).toInt()).coerceIn(1, 3)} s" else "3 seconden ingedrukt houden")
             }
         }
     }
