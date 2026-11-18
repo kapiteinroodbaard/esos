@@ -620,15 +620,15 @@ class MainActivity : ComponentActivity() {
                                         problems.forEach { BigStatusLine(it, false) }
                                     }
                                 }
-                                val watching = buildList {
-                                    if (listeningState == ListeningState.LISTENING) add("Luistert naar een hulproep")
-                                    if (fallDetectionOn && fallServiceActive) add("Merkt het als je valt")
-                                    if (inactivityEnabled) add("Waarschuwt na $inactivityHours uur zonder gebruik")
+                                val triggers = buildList {
+                                    add("Als je op de SOS-knop drukt")
+                                    if (listeningState == ListeningState.LISTENING) add("Als je om hulp roept")
+                                    if (fallDetectionOn && fallServiceActive) add("Als je valt")
+                                    if (inactivityEnabled) add("Als je de telefoon $inactivityHours uur niet gebruikt")
                                 }
-                                Text("Wat e-SOS doet", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                                if (watching.isEmpty()) BigStatusLine("Alleen de SOS-knop hierboven", true)
-                                watching.forEach { BigStatusLine(it, true) }
-                                Text("Wie wordt gewaarschuwd", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                Text("Wanneer gaat het alarm af?", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                                triggers.forEach { BigStatusLine(it, true) }
+                                Text("Wie wordt gewaarschuwd?", fontSize = 22.sp, fontWeight = FontWeight.Bold)
                                 if (contacts.isEmpty()) BigStatusLine("Nog niemand", false)
                                 contacts.forEach { contact ->
                                     BigStatusLine(contact.name + when {
