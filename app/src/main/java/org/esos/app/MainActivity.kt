@@ -303,8 +303,6 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
-                } catch (_: SecurityException) {
-                    message = "Geef toegang tot contacten en probeer het opnieuw."
                 } catch (_: RuntimeException) {
                     message = "Contactgegevens konden niet worden gelezen."
                 }
@@ -316,11 +314,6 @@ class MainActivity : ComponentActivity() {
             } catch (_: android.content.ActivityNotFoundException) {
                 message = "Geen contacten-app beschikbaar."
             }
-        }
-        val contactPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            permissionRefresh++
-            if (granted) pickContact()
-            else message = "Contacttoegang is nodig om een contact te selecteren."
         }
         val enableFallDetection: () -> Unit = {
             fallDetectionOn = true
@@ -364,7 +357,6 @@ class MainActivity : ComponentActivity() {
         val fineAllowed = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val backgroundAllowed = checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
         val microphoneAllowed = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-        val contactsAllowed = checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         val callPermissionAllowed = checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED
         val overlayAllowed = Settings.canDrawOverlays(this)
         val exactAlarmsAllowed = getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
@@ -384,24 +376,30 @@ class MainActivity : ComponentActivity() {
         }
         val basePermissionsGranted = phoneAllowed && smsAllowed && notificationsAllowed && microphoneAllowed && fineAllowed
         val allPermissionsGranted = basePermissionsGranted && backgroundAllowed
-        val allSetupRequirementsMet = allPermissionsGranted && !backgroundRestricted &&
+        val allSetupRequirementsMet = allPermissionsGranted && callPermissionAllowed && overlayAllowed &&
+            exactAlarmsAllowed && !backgroundRestricted &&
             batteryOptimizationDisabled && !powerSaveMode
         val permissionStatuses = listOf(
             "Microfoon" to microphoneAllowed,
             "Meldingen" to notificationsAllowed,
             "SMS versturen" to smsAllowed,
             "Telefoonstatus" to phoneAllowed,
+            "Belmachtiging" to callPermissionAllowed,
+            "Weergeven boven andere apps" to overlayAllowed,
+            "Exacte beltimers" to exactAlarmsAllowed,
             "Precieze locatie" to fineAllowed,
             "Locatie altijd toestaan" to backgroundAllowed,
             "Achtergrondgebruik niet beperkt" to !backgroundRestricted,
             "Batterijoptimalisatie uit" to batteryOptimizationDisabled,
             "Energiebesparing uit" to !powerSaveMode
         )
-        val otherBasePermissionsMissing = !phoneAllowed || !notificationsAllowed || !microphoneAllowed || !fineAllowed
+        val otherBasePermissionsMissing = !phoneAllowed || !callPermissionAllowed || !notificationsAllowed ||
+            !microphoneAllowed || !fineAllowed
         val permissionsToRequest = buildList {
             if (!microphoneAllowed) add(Manifest.permission.RECORD_AUDIO)
             if (!notificationsAllowed) add(Manifest.permission.POST_NOTIFICATIONS)
             if (!phoneAllowed) add(Manifest.permission.READ_PHONE_STATE)
+            if (!callPermissionAllowed) add(Manifest.permission.CALL_PHONE)
             if (!fineAllowed) {
                 add(Manifest.permission.ACCESS_FINE_LOCATION)
                 add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -463,6 +461,18 @@ class MainActivity : ComponentActivity() {
                             Button(onClick = { permissions.launch(permissionsToRequest) },
                                 modifier = Modifier.fillMaxWidth()) { Text("Vraag overige machtigingen") }
                         }
+                        if (!overlayAllowed) {
+                            Text("Sta weergave boven andere apps toe, zodat de rode SOS-rand zichtbaar blijft.")
+                            OutlinedButton(onClick = openOverlaySettings, modifier = Modifier.fillMaxWidth()) {
+                                Text("Sta weergave boven andere apps toe")
+                            }
+                        }
+                        if (!exactAlarmsAllowed) {
+                            Text("Sta exacte alarmen toe, zodat Android de belpogingen niet uitstelt.")
+                            OutlinedButton(onClick = openExactAlarmSettings, modifier = Modifier.fillMaxWidth()) {
+                                Text("Sta exacte alarmen toe")
+                            }
+                        }
                         if (fineAllowed && !backgroundAllowed) {
                             Text("Open de app-machtigingen en kies bij Locatie voor 'Altijd toestaan'.")
                             OutlinedButton(onClick = { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
@@ -497,7 +507,8 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth()) { Text("Verder") }
                     }
                     1 -> {
-                        Text("Contacten en SIM", fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                        Text(if (singleSimId != null) "Noodcontacten" else "Contacten en SIM",
+                            fontSize = 21.sp, fontWeight = FontWeight.Bold)
                         Text(if (singleSimId != null) "Voeg een bereikbaar noodcontact toe."
                             else "Voeg een bereikbaar noodcontact toe en kies de SIM voor alarm-SMS.")
                         EmergencyContacts(contacts, onChange = {
@@ -528,7 +539,8 @@ class MainActivity : ComponentActivity() {
                     }
                     else -> {
                         Text("Controle", fontSize = 21.sp, fontWeight = FontWeight.Bold)
-                        Text("Machtigingen, contact en SIM zijn ingesteld.")
+                        Text(if (singleSimId != null) "Machtigingen en contact zijn ingesteld."
+                            else "Machtigingen, contact en SIM zijn ingesteld.")
                         if (message.isNotBlank()) Text(message)
                         Button(onClick = {
                             settings.setupComplete = true
@@ -1036,11 +1048,8 @@ class MainActivity : ComponentActivity() {
                             Text("Instellingen", fontSize = 28.sp, fontWeight = FontWeight.Bold)
                             Text("Machtigingen", fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
                             permissionStatuses.forEach { (label, granted) -> PermissionStatusRow(label, granted) }
-                            PermissionStatusRow("Belmachtiging", callPermissionAllowed)
-                            PermissionStatusRow("Weergeven boven andere apps", overlayAllowed)
                             if (!overlayAllowed) OutlinedButton(onClick = openOverlaySettings,
                                 modifier = Modifier.fillMaxWidth()) { Text("Sta weergave boven andere apps toe") }
-                            PermissionStatusRow("Exacte beltimers", exactAlarmsAllowed)
                             if (!exactAlarmsAllowed) OutlinedButton(onClick = openExactAlarmSettings,
                                 modifier = Modifier.fillMaxWidth()) { Text("Sta exacte alarmen toe") }
                             if (backgroundRestricted) {
@@ -1058,10 +1067,6 @@ class MainActivity : ComponentActivity() {
                                 OutlinedButton(onClick = openBatterySaverSettings,
                                     modifier = Modifier.fillMaxWidth()) { Text("Open energiebesparing") }
                             }
-                            PermissionStatusRow("Contactenlijst (optioneel)", contactsAllowed)
-                            if (!contactsAllowed) OutlinedButton(onClick = {
-                                contactPermission.launch(Manifest.permission.READ_CONTACTS)
-                            }, modifier = Modifier.fillMaxWidth()) { Text("Vraag contacttoegang") }
                             if (permissionsToRequest.isNotEmpty()) Button(onClick = {
                                 permissions.launch(permissionsToRequest)
                             }, modifier = Modifier.fillMaxWidth()) { Text("Vraag overige machtigingen") }

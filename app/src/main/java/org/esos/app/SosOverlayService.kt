@@ -9,27 +9,55 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.os.IBinder
 import android.provider.Settings
 import android.view.Gravity
+import android.view.RoundedCorner
 import android.view.View
 import android.view.WindowManager
 import androidx.core.content.ContextCompat
 
-internal data class SosBorderEdge(val left: Int, val top: Int, val width: Int, val height: Int)
+internal data class SosBorderCorners(val topLeft: Float, val topRight: Float,
+    val bottomRight: Float, val bottomLeft: Float)
 
-internal fun sosBorderEdges(width: Int, height: Int, thickness: Int): List<SosBorderEdge> {
-    if (width <= 0 || height <= 0 || thickness <= 0) return emptyList()
-    val border = thickness.coerceAtMost(minOf(width, height) / 2)
-    if (border <= 0) return emptyList()
-    return listOf(
-        SosBorderEdge(0, 0, width, border),
-        SosBorderEdge(0, height - border, width, border),
-        SosBorderEdge(0, border, border, height - 2 * border),
-        SosBorderEdge(width - border, border, border, height - 2 * border)
-    ).filter { it.width > 0 && it.height > 0 }
+// De rand volgt de afgeronde schermhoeken; de binnenrand krijgt een kleinere straal zodat de dikte overal gelijk blijft.
+internal fun sosInnerCorners(outer: SosBorderCorners, thickness: Float): SosBorderCorners =
+    SosBorderCorners((outer.topLeft - thickness).coerceAtLeast(0f), (outer.topRight - thickness).coerceAtLeast(0f),
+        (outer.bottomRight - thickness).coerceAtLeast(0f), (outer.bottomLeft - thickness).coerceAtLeast(0f))
+
+private class SosBorderView(context: Context, private val thickness: Float) : View(context) {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.RED }
+    private val path = Path().apply { fillType = Path.FillType.EVEN_ODD }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        path.reset()
+        if (w <= 0 || h <= 0) return
+        val outer = screenCorners()
+        val inner = sosInnerCorners(outer, thickness)
+        path.addRoundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), radii(outer), Path.Direction.CW)
+        path.addRoundRect(RectF(thickness, thickness, w - thickness, h - thickness), radii(inner), Path.Direction.CW)
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        canvas.drawPath(path, paint)
+    }
+
+    private fun screenCorners(): SosBorderCorners {
+        val display = context.display
+        fun radius(position: Int) = display?.getRoundedCorner(position)?.radius?.toFloat() ?: 0f
+        return SosBorderCorners(radius(RoundedCorner.POSITION_TOP_LEFT), radius(RoundedCorner.POSITION_TOP_RIGHT),
+            radius(RoundedCorner.POSITION_BOTTOM_RIGHT), radius(RoundedCorner.POSITION_BOTTOM_LEFT))
+    }
+
+    private fun radii(corners: SosBorderCorners) = floatArrayOf(
+        corners.topLeft, corners.topLeft, corners.topRight, corners.topRight,
+        corners.bottomRight, corners.bottomRight, corners.bottomLeft, corners.bottomLeft)
 }
 
 object SosOverlay {
@@ -51,26 +79,29 @@ object SosOverlay {
         if (visible) return
         val manager = context.getSystemService(WindowManager::class.java)
         val bounds = manager.maximumWindowMetrics.bounds
-        val thickness = (8 * context.resources.displayMetrics.density).toInt().coerceAtLeast(1)
-        sosBorderEdges(bounds.width(), bounds.height(), thickness).forEach { edge ->
-            val view = View(context).apply {
-                setBackgroundColor(Color.RED)
-                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            }
-            val params = WindowManager.LayoutParams(edge.width, edge.height,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                PixelFormat.TRANSLUCENT).apply {
-                gravity = Gravity.TOP or Gravity.LEFT
-                x = edge.left
-                y = edge.top
-                alpha = 0.8f
-            }
-            manager.addView(view, params)
-            windows.add(view)
+        val thickness = 8 * context.resources.displayMetrics.density
+        // Eén schermvullend venster, ook onder statusbalk, navigatiebalk en camera-uitsparing.
+        val view = SosBorderView(context, thickness).apply {
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         }
+        val params = WindowManager.LayoutParams(bounds.width(), bounds.height(),
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT).apply {
+            gravity = Gravity.TOP or Gravity.LEFT
+            x = 0
+            y = 0
+            // Maximaal 0.8, anders blokkeert Android aanrakingen door het overlayvenster heen.
+            alpha = 0.8f
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            fitInsetsTypes = 0
+            setFitInsetsIgnoringVisibility(true)
+        }
+        manager.addView(view, params)
+        windows.add(view)
     }
 
     internal fun remove(context: Context) {

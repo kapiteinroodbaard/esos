@@ -35,6 +35,7 @@ class CancelPhraseTest {
         val matcher = PhraseMatcher(debounceMillis = 0L, phrases = WakePhrases.CANCEL_DEFAULTS)
         assertTrue(matcher.matches("Annuleer alarm!", 1))
         assertTrue(matcher.matches("annuleer alarm", 2))
+        assertTrue(matcher.matches("Stop!", 2))
         assertFalse(matcher.matches("annuleer", 3))
         assertFalse(matcher.matches("help mij", 4))
     }

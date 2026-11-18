@@ -9,7 +9,7 @@ interface OfflineDetector : AutoCloseable {
 
 object WakePhrases {
     val DEFAULTS = listOf("Help mij", "Ik heb hulp nodig", "Help Help", "Help me")
-    val CANCEL_DEFAULTS = listOf("Annuleer alarm", "Vals alarm", "Alles is goed")
+    val CANCEL_DEFAULTS = listOf("Stop", "Annuleer alarm", "Vals alarm", "Alles is goed")
 
     fun normalize(phrase: String): String = phrase.lowercase().trim()
         .replace(Regex("[.,!?]+"), "")

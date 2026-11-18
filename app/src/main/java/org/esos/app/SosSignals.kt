@@ -5,6 +5,7 @@ import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.media.ToneGenerator
 import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -71,6 +72,26 @@ internal object AlarmTone {
             }
         }
         return samples.toShortArray()
+    }
+}
+
+/** Piept elke seconde van de countdown als gesproken feedback uit staat; de laatste 10 s met een dubbele piep. */
+object CountdownBeeper {
+    private var tones: ToneGenerator? = null
+    private var lastSecond = -1
+
+    fun onTick(context: Context, remainingSeconds: Int) {
+        if (AppSettings(context).spokenFeedbackEnabled || remainingSeconds <= 0 || remainingSeconds == lastSecond) return
+        lastSecond = remainingSeconds
+        val generator = tones ?: runCatching { ToneGenerator(AudioManager.STREAM_ALARM, ToneGenerator.MAX_VOLUME) }
+            .getOrNull()?.also { tones = it } ?: return
+        generator.startTone(if (remainingSeconds <= 10) ToneGenerator.TONE_PROP_BEEP2 else ToneGenerator.TONE_PROP_BEEP, 150)
+    }
+
+    fun stop() {
+        tones?.release()
+        tones = null
+        lastSecond = -1
     }
 }
 

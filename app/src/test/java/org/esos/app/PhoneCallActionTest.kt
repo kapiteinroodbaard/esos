@@ -8,16 +8,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PhoneCallActionTest {
-    @Test fun overlayUsesOnlyFourThinNonOverlappingEdges() {
-        val edges = sosBorderEdges(1080, 2400, 8)
-        assertEquals(4, edges.size)
-        assertEquals(SosBorderEdge(0, 0, 1080, 8), edges[0])
-        assertEquals(SosBorderEdge(0, 2392, 1080, 8), edges[1])
-        assertEquals(SosBorderEdge(0, 8, 8, 2384), edges[2])
-        assertEquals(SosBorderEdge(1072, 8, 8, 2384), edges[3])
-        assertTrue(edges.none { 540 in it.left until it.left + it.width &&
-            1200 in it.top until it.top + it.height })
-        assertTrue(sosBorderEdges(0, 2400, 8).isEmpty())
+    @Test fun overlayInnerCornersKeepBorderThicknessEven() {
+        assertEquals(SosBorderCorners(82f, 82f, 0f, 0f),
+            sosInnerCorners(SosBorderCorners(100f, 100f, 0f, 18f), 18f))
     }
 
     @Test fun timedRoundAdvancesOnceThroughTheEntireList() {

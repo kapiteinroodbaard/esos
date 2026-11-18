@@ -14,8 +14,8 @@ android {
         applicationId = "org.esos.app"
         minSdk = 34
         targetSdk = 36
-        versionCode = 34
-        versionName = "1.1.6"
+        versionCode = 36
+        versionName = "1.1.8"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     signingConfigs {

@@ -39,6 +39,7 @@ object AlertRuntime {
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis)
         coordinator = alarm
         if (!alarm.start(reason, countdownMillis)) return false
+        CountdownBeeper.stop()
         SosSignals.announce(app)
         if (!isTest && countdownMillis > 0L) {
             countdownAnnouncement(reason)?.let { AlertAudioPlayer.play(app, it) }
@@ -60,6 +61,7 @@ object AlertRuntime {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val hasPendingAlarm = prefs.contains("deadline")
         if (SosSignals.running && !settings.sosModeActive) SosSignals.stop(context)
+        CountdownBeeper.stop()
         val cancelledCountdown = coordinator?.cancel() == true
         val sosWasActive = settings.sosModeActive
         if (!cancelledCountdown && !sosWasActive && !hasPendingAlarm) return false
@@ -204,6 +206,7 @@ object AlertRuntime {
         if (System.currentTimeMillis() >= alarm.deadline) recover(context) else alarm.tick()
         if (alarm.state == AlertState.COUNTDOWN) {
             val seconds = remainingSeconds()
+            CountdownBeeper.onTick(context, seconds)
             notificationManager(context).notify(101, Notification.Builder(context, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_alert)
                 .setContentTitle("SOS: nog $seconds seconden")
@@ -215,6 +218,7 @@ object AlertRuntime {
                 )).build()).build())
             handler.postDelayed({ tick(context, alarm) }, 250L)
         } else {
+            CountdownBeeper.stop()
             notificationManager(context).cancel(101)
             handler.postDelayed({ alarm.tick(); alarm.reset() }, 20_001L)
         }
