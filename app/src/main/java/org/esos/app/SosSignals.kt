@@ -101,8 +101,6 @@ object SosSignals {
     private var savedAlarmVolume: Int? = null
     @Volatile var running = false
         private set
-    private const val TEST_MILLIS = 10_000L
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** One-shot morse vibration announcing the start of an alert, before the SOS phase begins. */
     fun announce(context: Context) {
@@ -121,15 +119,7 @@ object SosSignals {
         if (settings.vibrationEnabled && settings.vibrationContinuous) startVibration(app, true)
     }
 
-    /** Runs the signals for a manual SOS test and stops them again after a short while. */
-    fun startTest(context: Context) {
-        start(context)
-        handler.removeCallbacksAndMessages(null)
-        handler.postDelayed({ stop(context) }, TEST_MILLIS)
-    }
-
     fun stop(context: Context) {
-        handler.removeCallbacksAndMessages(null)
         running = false
         val app = context.applicationContext
         stopSound(app)

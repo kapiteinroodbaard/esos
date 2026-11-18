@@ -67,15 +67,16 @@ De acties **SMS versturen** en **Contacten bellen** zijn onafhankelijk.
 onder **SMS versturen** wanneer die actie aan staat. Zonder SMS-actie wordt geen
 GPS-locatie opgevraagd; een eerder opgeslagen locatiekeuze blijft behouden.
 Contacten worden met de plusknop rechtstreeks uit de contactenlijst toegevoegd;
-selecteer daar een internationaal telefoonnummer. Met de sleepgreep kunnen contacten
-omhoog of omlaag worden verplaatst, ook tijdens de eerste configuratie.
+selecteer daar een contact; nummers als `06…` worden automatisch omgezet naar
+`+316…`. Met de pijlknoppen kunnen contacten omhoog of omlaag worden verplaatst,
+ook tijdens de eerste configuratie. Verwijderen vraagt om bevestiging.
 Toevoegen, verwijderen en wijzigen van de volgorde worden direct opgeslagen; SIM-keuze en schakelaars
 gelden direct, zonder aparte bewaarknop. Als bellen aan staat, belt een echt alarm
 het eerste noodcontact, ook als SMS uit staat of mislukt. Daarna wordt elke
 15 minuten het volgende contact geprobeerd, eenmaal door de hele lijst heen.
 De volgorde wordt bij het starten van de belronde vastgelegd; wijzigingen gelden
-voor het volgende alarm. De SOS-test belt
-nooit. Bij een echt alarm klinkt na het aanbieden van de SMS aan alle contacten
+voor het volgende alarm. Er is bewust geen testmodus: test altijd het hele
+proces met een echt alarm. Bij een alarm klinkt na het aanbieden van de SMS aan alle contacten
 de opname `7-sms-verstuurd.mp3`; dit bevestigt geen aflevering. Een mislukte
 SMS-aanbieding krijgt geen gesproken succesmelding. Voor het bellen klinkt
 `8-bellen-contact.mp3` volledig; daarna wordt het contact gebeld. Annuleren
@@ -131,8 +132,7 @@ back-up en toesteloverdracht zijn voor deze data uitgeschakeld. Deze opslag is
 **niet aanvullend versleuteld**. SMS-tekst, huisadres en eventuele GPS-coordinaten
 gaan via de telefoonprovider naar het opgegeven contact; de kaartlink is alleen
 tekst in de SMS. Er wordt geen audio of transcript opgenomen, opgeslagen of
-verzonden. Incidentlocatie wordt niet permanent opgeslagen. De simulatie doet
-geen GPS-aanvraag en stuurt geen SMS. De test-SMS vraagt extra bevestiging.
+verzonden. Incidentlocatie wordt niet permanent opgeslagen.
 
 Locatie is opt-in: aparte precieze en achtergrondlocatietoestemming zijn nodig,
 evenals ingeschakelde systeemlocatie/GPS. Alleen een recente GPS-fix (maximaal

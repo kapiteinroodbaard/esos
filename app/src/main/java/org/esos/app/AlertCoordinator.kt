@@ -26,10 +26,7 @@ enum class AlertReason(val countdownMillis: Long) {
 }
 
 object AlertMessageFormatter {
-    fun format(isTest: Boolean, text: String): String =
-        if (isTest) "e-SOS SOS-TEST (geen echte noodsituatie): $text" else text
-
-    fun cancellation(isTest: Boolean): String = format(isTest, "SOS geannuleerd.")
+    const val CANCELLATION = "SOS geannuleerd."
 }
 
 class AlertCoordinator(
@@ -90,6 +87,13 @@ class AlertCoordinator(
         state = AlertState.CANCELLED
         locationRequest?.cancel()
         return true
+    }
+
+    /** Beëindigt de countdown meteen en verstuurt het alarm nu. */
+    fun triggerNow() {
+        if (state != AlertState.COUNTDOWN) return
+        deadline = now()
+        tick()
     }
 
     fun reset() {

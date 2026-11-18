@@ -3,7 +3,6 @@ package org.esos.app
 internal class SmsThenCallAlertSender(
     private val smsEnabled: () -> Boolean,
     private val callEnabled: () -> Boolean,
-    private val isTest: Boolean,
     private val sendSms: (Long, String) -> Unit,
     private val startCall: (Long) -> Unit,
     private val onAlertStarted: () -> Unit = {},
@@ -21,13 +20,13 @@ internal class SmsThenCallAlertSender(
         try {
             if (smsEnabled()) {
                 sendSms(incidentId, text)
-                if (!smsAnnounced && !isTest) {
+                if (!smsAnnounced) {
                     smsAnnounced = true
                     onSmsSent()
                 }
             }
         } finally {
-            if (!isTest && callEnabled() && !callStarted) {
+            if (callEnabled() && !callStarted) {
                 callStarted = true
                 startCall(incidentId)
             }

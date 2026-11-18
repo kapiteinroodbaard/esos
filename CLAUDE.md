@@ -22,7 +22,7 @@ Needs JDK 17 (`JAVA_HOME`) and the Android SDK (`ANDROID_HOME`, platform 36). Si
 
 ## Architecture
 
-Offline emergency app (no network, backend or Play Services). Everything is in `app/src/main/java/org/esos/app`; the single `MainActivity` is a Compose UI with five tabs (Dashboard, Detectie, Acties, Contacten, Instellingen). All persistent state is in `AppSettings` (SharedPreferences, one property per setting).
+Offline emergency app (no network, backend or Play Services). Everything is in `app/src/main/java/org/esos/app`; the single `MainActivity` is a Compose UI with five tabs (Start, Bewaking, Alarm, Contacten, Instellingen; the Start tab is the simple senior-friendly view, larger type comes from `seniorTypography()`). All persistent state is in `AppSettings` (SharedPreferences, one property per setting).
 
 **Triggers → `AlertRuntime` → actions.** Detectors start an alert with an `AlertReason`: `ListeningService` (Vosk speech), `FallDetectionService`/`FallDetector`, `InactivityMonitor` (unlock timeout) and `CheckInScheduler` (missed check-in), plus the manual SOS button. `AlertRuntime` is the process-wide singleton that owns the single active `AlertCoordinator`.
 
@@ -32,7 +32,7 @@ Offline emergency app (no network, backend or Play Services). Everything is in `
 - Calls: `SosCallScheduler` persists the contact list and rings contact N every 15 min via exact alarms (`TimedCallRound`); `PhoneCallAction`/`PhoneCallService`/`PhoneCallActivity` place and manage the call. e-SOS is not the default phone app, so hang-up and audio routing cannot be enforced.
 - Cancelling (`AlertRuntime.cancel`, also reachable from the notification, the UI and spoken cancel phrases) must undo everything: scheduler, overlay, signals, pending alarm, notifications.
 
-**Manual SOS vs. test.** `startManual` is a real SOS with no countdown; `startManualTest` (`isTest`) sends a labelled test SMS but never calls, never enters the persistent SOS phase (no `sosModeActive`, border or announcements), and runs `SosSignals` for only 10 s. Anything added to the SOS phase has to be wired for both paths and for the cancel path.
+**Manual SOS and countdown.** `startManual` is a real SOS with no countdown; there is deliberately no test mode (only a full real run counts as a test). Triggers with a countdown open `CountdownActivity` ("Gaat het goed?") over the lock screen, directly and as the notification's full-screen intent; its "Nee, haal hulp" calls `AlertRuntime.sendNow`. During SOS the Start tab shows `AlertRuntime.smsStatus` and `SosCallScheduler.status` in plain Dutch. Anything added to the SOS phase has to be wired for the cancel path too.
 
 **Signals (`SosSignals.kt`).** Alarm sound (looping `AudioTrack` PCM, `HIGH_TONE` or `MORSE_SOS`, forces alarm volume to max and restores it) and morse vibration (`MorseSos` builds the timing pattern). The one-shot vibration fires at countdown start (`announce`); alarm sound and continuous vibration start only when SOS is really triggered. `restoreActiveSosNotification` restarts them after process death.
 

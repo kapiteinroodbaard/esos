@@ -7,7 +7,7 @@ class SmsThenCallAlertSenderTest {
     @Test fun announcesSuccessfulSmsBeforePreparingCallOnlyOnce() {
         val events = mutableListOf<String>()
         val sender = SmsThenCallAlertSender(
-            smsEnabled = { true }, callEnabled = { true }, isTest = false,
+            smsEnabled = { true }, callEnabled = { true },
             sendSms = { _, _ -> events.add("sms-all-contacts") },
             startCall = { events.add("prepare-call") },
             onAlertStarted = { events.add("sos-started") },
@@ -21,12 +21,12 @@ class SmsThenCallAlertSenderTest {
             "prepare-call", "sms-all-contacts"), events)
     }
 
-    @Test fun doesNotAnnounceFailedDisabledOrTestSms() {
+    @Test fun doesNotAnnounceFailedOrDisabledSms() {
         val events = mutableListOf<String>()
-        listOf(Pair(true, false), Pair(false, false), Pair(true, true)).forEach { (enabled, test) ->
+        listOf(true, false).forEach { enabled ->
             val sender = SmsThenCallAlertSender(
-                smsEnabled = { enabled }, callEnabled = { true }, isTest = test,
-                sendSms = { _, _ -> if (!test) error("SMS failed") },
+                smsEnabled = { enabled }, callEnabled = { true },
+                sendSms = { _, _ -> error("SMS failed") },
                 startCall = { events.add("call") },
                 onSmsSent = { events.add("sms-announcement") }
             )
@@ -41,7 +41,6 @@ class SmsThenCallAlertSenderTest {
         val sender = SmsThenCallAlertSender(
             smsEnabled = { true },
             callEnabled = { true },
-            isTest = false,
             sendSms = { _, text -> events.add("sms:$text") },
             startCall = { incidentId -> events.add("call:$incidentId") }
         )
@@ -55,7 +54,7 @@ class SmsThenCallAlertSenderTest {
     @Test fun callsOnceWithoutSms() {
         val events = mutableListOf<String>()
         val smsDisabledSender = SmsThenCallAlertSender(
-            smsEnabled = { false }, callEnabled = { true }, isTest = false,
+            smsEnabled = { false }, callEnabled = { true },
             sendSms = { _, _ -> events.add("sms") }, startCall = { events.add("call") }
         )
 
@@ -65,28 +64,11 @@ class SmsThenCallAlertSenderTest {
         assertEquals(listOf("call"), events)
     }
 
-    @Test fun neverCallsWhenAlarmIsATest() {
-        val events = mutableListOf<String>()
-        val testSender = SmsThenCallAlertSender(
-            smsEnabled = { true }, callEnabled = { true }, isTest = true,
-            sendSms = { _, _ -> events.add("sms-test") }, startCall = { events.add("call-test") }
-        )
-        testSender.send(9L, "SOS")
-
-        val callOnlyTestSender = SmsThenCallAlertSender(
-            smsEnabled = { false }, callEnabled = { true }, isTest = true,
-            sendSms = { _, _ -> events.add("sms") }, startCall = { events.add("call") }
-        )
-        callOnlyTestSender.send(9L, "SOS")
-
-        assertEquals(listOf("sms-test"), events)
-    }
-
     @Test fun callsEvenWhenSmsFailsAndReportsTheFailure() {
         val events = mutableListOf<String>()
         val failure = IllegalStateException("SMS failed")
         val sender = SmsThenCallAlertSender(
-            smsEnabled = { true }, callEnabled = { true }, isTest = false,
+            smsEnabled = { true }, callEnabled = { true },
             sendSms = { _, _ -> events.add("sms"); throw failure },
             startCall = { events.add("call") }
         )
@@ -100,7 +82,7 @@ class SmsThenCallAlertSenderTest {
     @Test fun sendsOnlySmsWhenCallingIsDisabled() {
         val events = mutableListOf<String>()
         val sender = SmsThenCallAlertSender(
-            smsEnabled = { true }, callEnabled = { false }, isTest = false,
+            smsEnabled = { true }, callEnabled = { false },
             sendSms = { _, _ -> events.add("sms") }, startCall = { events.add("call") }
         )
 
@@ -112,7 +94,7 @@ class SmsThenCallAlertSenderTest {
     @Test fun smsIsSentBeforeCallFailureIsReported() {
         val events = mutableListOf<String>()
         val sender = SmsThenCallAlertSender(
-            smsEnabled = { true }, callEnabled = { true }, isTest = false,
+            smsEnabled = { true }, callEnabled = { true },
             sendSms = { _, _ -> events.add("sms") },
             startCall = { events.add("call"); throw IllegalStateException("call failed") }
         )

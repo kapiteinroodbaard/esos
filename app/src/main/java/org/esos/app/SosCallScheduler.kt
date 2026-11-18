@@ -61,16 +61,17 @@ object SosCallScheduler {
         val next = TimedCallRound.nextIndex(expectedIndex, contacts.size)
         val deadline = TimedCallRound.nextDeadline(System.currentTimeMillis())
         prefs.edit().putInt(INDEX, next ?: -1).putLong(DEADLINE, if (next == null) 0L else deadline)
-            .putString("status", if (next == null) "Laatste contact wordt gebeld; belronde afgerond."
-                else "Contact ${expectedIndex + 1}/${contacts.size}; volgende belpoging over 15 minuten.")
+            .putString("status", if (next == null) "${contact.name} wordt nu gebeld. Dit is het laatste contact."
+                else "${contact.name} wordt nu gebeld.\nVolgende poging: ${contacts[next].name} om ${clockTime(deadline)}.")
             .commit()
         if (next != null) schedule(context, incidentId, next, deadline)
         runCatching {
             check(SmsAlertSender.validNumber(contact.number)) { "Ongeldig telefoonnummer" }
             PhoneCallAction.startEmergencyCall(context, contact, incidentId)
         }.onFailure {
-            val message = "Belpoging naar ${contact.name} mislukt." +
-                if (next == null) " Belronde afgerond." else " Volgend contact wordt later geprobeerd."
+            val message = "Bellen naar ${contact.name} is mislukt." +
+                if (next == null) " Dit was het laatste contact."
+                else "\nVolgende poging: ${contacts[next].name} om ${clockTime(deadline)}."
             prefs.edit().putString("status", message).apply()
             val manager = context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL, "Belactie mislukt",
@@ -99,6 +100,10 @@ object SosCallScheduler {
         prefs(context).edit().clear().commit()
         context.getSystemService(NotificationManager::class.java).cancel(232)
     }
+
+    private fun clockTime(millis: Long): String = java.time.Instant.ofEpochMilli(millis)
+        .atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+        .format(java.time.format.DateTimeFormatter.ofPattern("HH:mm"))
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

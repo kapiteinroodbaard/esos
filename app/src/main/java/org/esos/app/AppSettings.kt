@@ -82,10 +82,16 @@ class AppSettings(context: Context) {
     var cancelPhrases: List<String>
         get() {
             val stored = prefs.getString("cancelPhrases", null) ?: return WakePhrases.CANCEL_DEFAULTS
-            return runCatching {
+            val phrases = runCatching {
                 val entries = JSONArray(stored)
                 WakePhrases.unique((0 until entries.length()).map { entries.getString(it) })
             }.getOrDefault(WakePhrases.CANCEL_DEFAULTS)
+            // Versie 1.1.8 had 'Stop' als standaard annuleerzin; die wordt eenmalig verwijderd.
+            if (prefs.getBoolean("cancelStopRemoved", false)) return phrases
+            val cleaned = phrases.filter { WakePhrases.normalize(it) != "stop" }
+            cancelPhrases = cleaned
+            prefs.edit().putBoolean("cancelStopRemoved", true).apply()
+            return cleaned
         }
         set(value) {
             val entries = JSONArray()

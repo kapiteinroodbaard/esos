@@ -16,17 +16,16 @@ object AlertRuntime {
     private const val ACTIVE_SOS_CHANNEL = "active_sos"
     private const val PREFS = "pending_alarm"
     private const val ACTIVE_SOS_NOTIFICATION_ID = 106
+    private const val PROGRESS = "sos_progress"
     private var coordinator: AlertCoordinator? = null
     private val handler = Handler(Looper.getMainLooper())
 
     fun start(context: Context, reason: AlertReason): Boolean =
-        startInternal(context, reason, false, reason.countdownMillis)
+        startInternal(context, reason, reason.countdownMillis)
 
-    fun startManual(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, false, 0L)
+    fun startManual(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, 0L)
 
-    fun startManualTest(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, true, 0L)
-
-    private fun startInternal(context: Context, reason: AlertReason, isTest: Boolean, countdownMillis: Long): Boolean {
+    private fun startInternal(context: Context, reason: AlertReason, countdownMillis: Long): Boolean {
         val app = context.applicationContext
         val settings = AppSettings(app)
         val sms = SmsAlertSender(app, settings)
@@ -34,25 +33,38 @@ object AlertRuntime {
         if (settings.smsEnabled && !sms.ready() &&
             !(settings.callEnabled && PhoneCallAction.canStart(app, settings))) return false
         if (settings.callEnabled && !settings.smsEnabled && !PhoneCallAction.canStart(app, settings)) return false
-        val sender = senderFor(app, settings, sms, isTest)
+        val sender = senderFor(app, settings, sms)
         coordinator?.reset()
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis)
         coordinator = alarm
         if (!alarm.start(reason, countdownMillis)) return false
         CountdownBeeper.stop()
         SosSignals.announce(app)
-        if (!isTest && countdownMillis > 0L) {
+        if (countdownMillis > 0L) {
             countdownAnnouncement(reason)?.let { AlertAudioPlayer.play(app, it) }
         }
         app.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong("deadline", alarm.deadline).putString("reason", reason.name)
-            .putBoolean("manualTest", isTest).commit()
+            .commit()
         app.getSystemService(AlarmManager::class.java).setAndAllowWhileIdle(
             AlarmManager.RTC_WAKEUP, alarm.deadline, fallback(app))
         notificationManager(app).createNotificationChannel(
             NotificationChannel(CHANNEL, "SOS-alarm", NotificationManager.IMPORTANCE_HIGH)
         )
         tick(app, alarm)
+        if (countdownMillis > 0L) runCatching { app.startActivity(CountdownActivity.intent(app)) }
+        return true
+    }
+
+    /** Slaat de rest van de countdown over: de gebruiker vraagt zelf om hulp. */
+    fun sendNow(context: Context): Boolean {
+        val app = context.applicationContext
+        val alarm = coordinator?.takeIf { it.state == AlertState.COUNTDOWN } ?: return false
+        clearPending(app)
+        CountdownBeeper.stop()
+        alarm.triggerNow()
+        notificationManager(app).cancel(101)
+        handler.postDelayed({ alarm.tick(); alarm.reset() }, 20_001L)
         return true
     }
 
@@ -67,14 +79,14 @@ object AlertRuntime {
         if (!cancelledCountdown && !sosWasActive && !hasPendingAlarm) return false
         if (sosWasActive) AlertAudioPlayer.play(context, R.raw.noodprocedure_geannuleerd)
         if (sosWasActive && settings.smsEnabled) {
-            val isTest = prefs.getBoolean("manualTest", false)
             val incidentId = coordinator?.incidentId?.takeIf { it > 0L } ?: System.currentTimeMillis()
             runCatching {
-                SmsAlertSender(context, settings).send(incidentId, AlertMessageFormatter.cancellation(isTest))
+                SmsAlertSender(context, settings).send(incidentId, AlertMessageFormatter.CANCELLATION)
             }
         }
         settings.sosModeActive = false
         SosCallScheduler.cancel(context)
+        context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).edit().clear().apply()
         SosOverlay.stop(context)
         SosSignals.stop(context)
         clearPending(context)
@@ -89,6 +101,14 @@ object AlertRuntime {
         AlertReason.INACTIVITY -> R.raw.inactiviteitswaarschuwing
         AlertReason.FALL -> R.raw.val_detectie
         AlertReason.SOS, AlertReason.MISSED_CHECK_IN -> null
+    }
+
+    /** Wat er met de SMS is gebeurd tijdens de huidige SOS, in gewone taal. */
+    fun smsStatus(context: Context): String =
+        context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).getString("sms", "").orEmpty()
+
+    private fun saveSmsStatus(context: Context, status: String) {
+        context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).edit().putString("sms", status).apply()
     }
 
     fun state(): AlertState = coordinator?.state ?: AlertState.IDLE
@@ -114,7 +134,6 @@ object AlertRuntime {
         }
         val reason = runCatching { AlertReason.valueOf(prefs.getString("reason", "") ?: "") }.getOrNull()
         val legacySimulation = prefs.getBoolean("simulate", false)
-        val isTest = prefs.getBoolean("manualTest", false)
         clearPending(context)
         if (reason == null || legacySimulation) return
         val active = coordinator
@@ -126,7 +145,7 @@ object AlertRuntime {
             if (settings.smsEnabled && !sms.ready() &&
                 !(settings.callEnabled && PhoneCallAction.canStart(context, settings))) return
             if (settings.callEnabled && !settings.smsEnabled && !PhoneCallAction.canStart(context, settings)) return
-            val recovered = AlertCoordinator(senderFor(context, settings, sms, isTest), AndroidIncidentLocation(context, settings), System::currentTimeMillis)
+            val recovered = AlertCoordinator(senderFor(context, settings, sms), AndroidIncidentLocation(context, settings), System::currentTimeMillis)
             coordinator = recovered
             recovered.start(reason, 0L)
             recovered.tick()
@@ -135,11 +154,8 @@ object AlertRuntime {
         notificationManager(context).cancel(101)
     }
 
-    private fun enterSosPhase(context: Context, isTest: Boolean) {
-        if (isTest) {
-            SosSignals.startTest(context)
-            return
-        }
+    private fun enterSosPhase(context: Context) {
+        context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).edit().clear().commit()
         AppSettings(context).sosModeActive = true
         showActiveSosNotification(context)
         SosOverlay.start(context)
@@ -168,13 +184,17 @@ object AlertRuntime {
         Intent(context, AlarmDeadlineReceiver::class.java),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-    private fun senderFor(context: Context, settings: AppSettings, sms: SmsAlertSender, isTest: Boolean) =
+    private fun senderFor(context: Context, settings: AppSettings, sms: SmsAlertSender) =
         SmsThenCallAlertSender(
             smsEnabled = { settings.smsEnabled },
             callEnabled = { settings.callEnabled },
-            isTest = isTest,
             sendSms = { incidentId, text ->
-                sms.send(incidentId, AlertMessageFormatter.format(isTest, text))
+                try {
+                    sms.send(incidentId, text)
+                } catch (e: RuntimeException) {
+                    if (smsStatus(context).isEmpty()) saveSmsStatus(context, "SMS versturen is mislukt.")
+                    throw e
+                }
             },
             startCall = { incidentId ->
                 if (!PhoneCallAction.canStart(context, settings)) {
@@ -192,8 +212,11 @@ object AlertRuntime {
                     }
                 }
             },
-            onAlertStarted = { enterSosPhase(context, isTest) },
-            onSmsSent = { AlertAudioPlayer.enqueue(context, R.raw.sms_verstuurd) }
+            onAlertStarted = { enterSosPhase(context) },
+            onSmsSent = {
+                saveSmsStatus(context, "SMS verstuurd naar ${dutchList(settings.contacts.map { it.name })}.")
+                AlertAudioPlayer.enqueue(context, R.raw.sms_verstuurd)
+            }
         )
 
     private fun clearPending(context: Context) {
@@ -212,6 +235,10 @@ object AlertRuntime {
                 .setContentTitle("SOS: nog $seconds seconden")
                 .setContentText("Annuleer alleen als er geen hulp nodig is")
                 .setOngoing(true)
+                .setOnlyAlertOnce(true)
+                .setCategory(Notification.CATEGORY_ALARM)
+                .setFullScreenIntent(PendingIntent.getActivity(context, 14, CountdownActivity.intent(context),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE), true)
                 .addAction(Notification.Action.Builder(null, "Annuleer", PendingIntent.getBroadcast(
                     context, 10, Intent(context, CancelAlertReceiver::class.java),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -225,6 +252,13 @@ object AlertRuntime {
     }
 
     private fun notificationManager(context: Context) = context.getSystemService(NotificationManager::class.java)
+}
+
+/** "Jan", "Jan en Marie", "Jan, Piet en Marie". */
+internal fun dutchList(items: List<String>): String = when (items.size) {
+    0 -> ""
+    1 -> items[0]
+    else -> items.dropLast(1).joinToString(", ") + " en " + items.last()
 }
 
 class CancelAlertReceiver : BroadcastReceiver() {

@@ -52,3 +52,16 @@ class PhoneCallActionTest {
         }
     }
 }
+class DutchTextTest {
+    @Test fun namesAreJoinedInDutch() {
+        assertEquals("", dutchList(emptyList()))
+        assertEquals("Jan", dutchList(listOf("Jan")))
+        assertEquals("Jan en Marie", dutchList(listOf("Jan", "Marie")))
+        assertEquals("Jan, Piet en Marie", dutchList(listOf("Jan", "Piet", "Marie")))
+    }
+
+    @Test fun doubleZeroPrefixBecomesPlus() {
+        assertEquals("+31612345678", SmsAlertSender.withInternationalPrefix("0031612345678"))
+        assertEquals("0612345678", SmsAlertSender.withInternationalPrefix("0612345678"))
+    }
+}

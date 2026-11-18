@@ -17,19 +17,6 @@ class AlertCoordinatorTest {
         override fun send(incidentId: Long, text: String) { messages.add(text) }
     }, location, { time })
 
-    @Test fun testModeMarksMessagesWithoutChangingAlarmMessages() {
-        val message = "SOS: ik heb mogelijk hulp nodig."
-        assertEquals(message, AlertMessageFormatter.format(false, message))
-        assertEquals("e-SOS SOS-TEST (geen echte noodsituatie): $message",
-            AlertMessageFormatter.format(true, message))
-    }
-
-    @Test fun cancellationMessageIdentifiesTestMode() {
-        assertEquals("SOS geannuleerd.", AlertMessageFormatter.cancellation(false))
-        assertEquals("e-SOS SOS-TEST (geen echte noodsituatie): SOS geannuleerd.",
-            AlertMessageFormatter.cancellation(true))
-    }
-
     @Test fun appTriggersUseOneMinuteCountdown() {
         val messages = mutableListOf<String>()
         val sender = object : AlertSender {
@@ -60,6 +47,16 @@ class AlertCoordinatorTest {
             assertEquals(1, messages.size)
             messages.clear()
         }
+    }
+
+    @Test fun triggerNowSendsDuringCountdownOnlyOnce() {
+        assertTrue(coordinator.start(AlertReason.FALL))
+        time += 5_000L
+        coordinator.triggerNow()
+        assertEquals(AlertState.SENT, coordinator.state)
+        assertEquals(listOf("SOS: val gedetecteerd; mogelijk hulp nodig."), messages)
+        coordinator.triggerNow()
+        assertEquals(1, messages.size)
     }
 
     @Test fun manualSosCanStartWithoutCountdown() {
