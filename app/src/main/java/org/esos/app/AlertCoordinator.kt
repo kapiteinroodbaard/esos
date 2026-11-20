@@ -40,10 +40,11 @@ class AlertCoordinator(
         private set
     var deadline = 0L
         private set
-    private var sentAt = 0L
+    /** Of het alarmbericht een GPS-locatie bevatte; zo niet, dan zoekt `SosLocationService` verder. */
+    var locationIncluded = false
+        private set
     private var fix: GpsFix? = null
     private var locationRequest: LocationRequest? = null
-    private var supplementSent = false
     private var reason = AlertReason.SOS
 
     fun start(reason: AlertReason, countdownMillis: Long = reason.countdownMillis): Boolean {
@@ -53,26 +54,11 @@ class AlertCoordinator(
         state = AlertState.COUNTDOWN
         deadline = now() + countdownMillis
         fix = null
-        sentAt = 0L
-        supplementSent = false
+        locationIncluded = false
         val current = incidentId
         try {
             locationRequest = location.request { candidate ->
-                if (incidentId == current && (state == AlertState.COUNTDOWN || state == AlertState.SENT)) {
-                    val time = now()
-                    if (candidate.usable(time)) {
-                        if (state == AlertState.COUNTDOWN) fix = candidate
-                        else if (!supplementSent && time - sentAt in 0..20_000) {
-                            supplementSent = true
-                            try {
-                                sender.send(current, "Aanvulling op alarm: ${formatFix(candidate)}")
-                            } catch (_: RuntimeException) {
-                                state = AlertState.ERROR
-                            }
-                            locationRequest?.cancel()
-                        }
-                    }
-                }
+                if (incidentId == current && state == AlertState.COUNTDOWN && candidate.usable(now())) fix = candidate
             }
         } catch (_: SecurityException) {
             locationRequest = null
@@ -107,7 +93,7 @@ class AlertCoordinator(
         val time = now()
         if (state == AlertState.COUNTDOWN && time >= deadline) {
             state = AlertState.SENT
-            sentAt = time
+            locationRequest?.cancel()
             val base = when (reason) {
                 AlertReason.SOS -> "SOS: ik heb mogelijk hulp nodig."
                 AlertReason.SPEECH_DETECTED -> "SOS: hulpzin herkend; ik heb mogelijk hulp nodig."
@@ -115,21 +101,18 @@ class AlertCoordinator(
                 AlertReason.INACTIVITY -> "SOS: telefoon niet ontgrendeld binnen de ingestelde tijd."
                 AlertReason.FALL -> "SOS: val gedetecteerd; mogelijk hulp nodig."
             }
-            val gps = fix?.takeIf { it.usable(time) }?.let { " ${formatFix(it)}" } ?: ""
+            val gps = fix?.takeIf { it.usable(time) }?.let { " ${formatGpsFix(it)}" } ?: ""
+            locationIncluded = gps.isNotEmpty()
             try {
                 sender.send(incidentId, base + gps)
             } catch (_: RuntimeException) {
                 state = AlertState.ERROR
-                locationRequest?.cancel()
-            }
-            if (gps.isNotEmpty()) {
-                supplementSent = true
-                locationRequest?.cancel()
             }
         }
-        if (state == AlertState.SENT && time - sentAt > 20_000) locationRequest?.cancel()
     }
-
-    private fun formatFix(fix: GpsFix): String =
-        "GPS: ${fix.latitude},${fix.longitude} (nauwkeurigheid ${fix.accuracyMeters.toInt()} m, tijd ${fix.timestampMillis}); geo:${fix.latitude},${fix.longitude}"
 }
+
+internal fun formatGpsFix(fix: GpsFix): String =
+    "GPS: ${fix.latitude},${fix.longitude} (nauwkeurigheid ${fix.accuracyMeters.toInt()} m, tijd ${fix.timestampMillis}); geo:${fix.latitude},${fix.longitude}"
+
+internal fun locationSupplement(fix: GpsFix): String = "Aanvulling op alarm: ${formatGpsFix(fix)}"

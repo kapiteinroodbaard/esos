@@ -143,11 +143,13 @@ gaan via de telefoonprovider naar het opgegeven contact; de kaartlink is alleen
 tekst in de SMS. Er wordt geen audio of transcript opgenomen, opgeslagen of
 verzonden. Incidentlocatie wordt niet permanent opgeslagen.
 
-Locatie is opt-in: aparte precieze en achtergrondlocatietoestemming zijn nodig,
-evenals ingeschakelde systeemlocatie/GPS. Alleen een recente GPS-fix (maximaal
-30 s oud, maximaal 100 m nauwkeurigheid) kan worden meegestuurd. Een eerste SMS
-wacht niet op GPS. Een geschikte fix tot 20 s erna kan eenmaal als aanvulling
-worden verstuurd. Binnenshuis is een fix vaak onmogelijk; toestemming weigeren
+Locatie is opt-in: aparte precieze en achtergrondlocatietoestemming zijn nodig.
+Alleen een recente GPS-fix (maximaal 30 s oud, maximaal 100 m nauwkeurigheid) kan
+worden meegestuurd. Een eerste SMS wacht niet op GPS. Ging die zonder locatie de
+deur uit, dan blijft e-SOS zolang de SOS actief is naar een fix zoeken, ook als
+systeemlocatie/GPS pas later wordt aangezet, en stuurt de eerste geschikte fix
+eenmaal na als "Aanvulling op alarm". Het Start-tabblad toont "Locatie wordt nog
+gezocht." of "Locatie nagestuurd.". Binnenshuis is een fix vaak onmogelijk; toestemming weigeren
 mag de basis-SMS niet blokkeren.
 
 Android kan alarms in Doze uitstellen. Een processtop of het bewust uitzetten

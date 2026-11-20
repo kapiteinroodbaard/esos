@@ -70,18 +70,22 @@ class AlertCoordinatorTest {
         assertEquals(1, messages.size)
     }
 
-    @Test fun sendsWithoutGpsAtDeadlineAndOnlyOneTimelySupplement() {
+    @Test fun sendsWithoutGpsAtDeadlineAndLeavesLateFixToLocationService() {
         assertTrue(coordinator.start(AlertReason.SOS))
         assertFalse(coordinator.start(AlertReason.SOS))
         time += 60_000
         coordinator.tick()
         assertEquals(1, messages.size)
         assertFalse(messages[0].contains("GPS:"))
+        assertFalse(coordinator.locationIncluded)
         callback!!(GpsFix(51.0, 4.0, 20f, time))
-        callback!!(GpsFix(52.0, 5.0, 20f, time))
-        assertEquals(2, messages.size)
-        assertTrue(messages[1].contains("geo:51.0,4.0"))
-        assertFalse(messages[1].contains("maps.google.com"))
+        assertEquals(1, messages.size)
+    }
+
+    @Test fun locationSupplementNamesTheFix() {
+        val text = locationSupplement(GpsFix(51.0, 4.0, 12.7f, 5L))
+        assertTrue(text.startsWith("Aanvulling op alarm: GPS: 51.0,4.0 (nauwkeurigheid 12 m"))
+        assertTrue(text.endsWith("geo:51.0,4.0"))
     }
 
     @Test fun cancelledAlarmNeverSends() {
@@ -99,9 +103,9 @@ class AlertCoordinatorTest {
         callback!!(GpsFix(51.0, 4.0, 20f, 1))
         time += 10_000
         coordinator.tick()
-        time += 20_001
-        callback!!(GpsFix(51.0, 4.0, 20f, time))
         assertEquals(1, messages.size)
+        assertFalse(messages.single().contains("GPS:"))
+        assertFalse(coordinator.locationIncluded)
     }
 
     @Test fun inaccurateFixIsIgnoredButFreshAccurateFixIsIncluded() {
@@ -114,6 +118,7 @@ class AlertCoordinatorTest {
         assertTrue(messages.single().contains("52.0,5.0"))
         assertTrue(messages.single().contains("geo:52.0,5.0"))
         assertFalse(messages.single().contains("maps.google.com"))
+        assertTrue(coordinator.locationIncluded)
         callback!!(GpsFix(53.0, 6.0, 20f, time))
         assertEquals(1, messages.size)
     }

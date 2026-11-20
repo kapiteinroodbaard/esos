@@ -218,6 +218,7 @@ class MainActivity : ComponentActivity() {
         var sosModeActive by remember { mutableStateOf(settings.sosModeActive) }
         var callRoundStatus by remember { mutableStateOf(SosCallScheduler.status(this)) }
         var smsStatus by remember { mutableStateOf(AlertRuntime.smsStatus(this)) }
+        var locationStatus by remember { mutableStateOf(AlertRuntime.locationStatus(this)) }
         var overlayVisible by remember { mutableStateOf(SosOverlay.visible) }
         var listeningState by remember { mutableStateOf(ListeningStatus.state) }
         var listeningDetail by remember { mutableStateOf(ListeningStatus.detail) }
@@ -308,6 +309,7 @@ class MainActivity : ComponentActivity() {
                 sosModeActive = settings.sosModeActive
                 callRoundStatus = SosCallScheduler.status(this@MainActivity)
                 smsStatus = AlertRuntime.smsStatus(this@MainActivity)
+                locationStatus = AlertRuntime.locationStatus(this@MainActivity)
                 overlayVisible = SosOverlay.visible
                 listeningState = ListeningStatus.state
                 listeningDetail = ListeningStatus.detail
@@ -601,6 +603,8 @@ class MainActivity : ComponentActivity() {
                                         Text("Hulp wordt gewaarschuwd", fontSize = 26.sp, fontWeight = FontWeight.Bold)
                                         if (smsEnabled) BigStatusLine(smsStatus.ifBlank { "SMS wordt verstuurd…" },
                                             !smsStatus.contains("mislukt"))
+                                        if (locationStatus.isNotBlank()) BigStatusLine(locationStatus,
+                                            locationStatus == "Locatie nagestuurd.")
                                         if (callEnabled && callRoundStatus.isNotBlank()) BigStatusLine(callRoundStatus,
                                             !callRoundStatus.contains("mislukt"))
                                         if (!overlayAllowed) OutlinedButton(onClick = openOverlaySettings) {

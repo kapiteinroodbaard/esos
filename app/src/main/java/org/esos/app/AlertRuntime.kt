@@ -15,8 +15,9 @@ object AlertRuntime {
     const val CHANNEL = "alarm"
     private const val ACTIVE_SOS_CHANNEL = "active_sos"
     private const val PREFS = "pending_alarm"
-    private const val ACTIVE_SOS_NOTIFICATION_ID = 106
-    private const val PROGRESS = "sos_progress"
+    const val ACTIVE_SOS_NOTIFICATION_ID = 106
+    const val PROGRESS = "sos_progress"
+    const val LOCATION_STATUS = "location"
     private var coordinator: AlertCoordinator? = null
     private val handler = Handler(Looper.getMainLooper())
 
@@ -95,6 +96,7 @@ object AlertRuntime {
             }
         }
         settings.sosModeActive = false
+        SosLocationService.stop(context)
         SosCallScheduler.cancel(context)
         context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).edit().clear().apply()
         SosOverlay.stop(context)
@@ -118,6 +120,10 @@ object AlertRuntime {
     fun smsStatus(context: Context): String =
         context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).getString("sms", "").orEmpty()
 
+    /** Of de locatie nog gezocht wordt of al is nagestuurd; leeg als het alarm de locatie al bevatte. */
+    fun locationStatus(context: Context): String =
+        context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).getString(LOCATION_STATUS, "").orEmpty()
+
     private fun saveSmsStatus(context: Context, status: String) {
         context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).edit().putString("sms", status).apply()
     }
@@ -131,6 +137,7 @@ object AlertRuntime {
             showActiveSosNotification(context)
             SosOverlay.start(context)
             SosSignals.start(context, restoring = true)
+            SosLocationService.resume(context)
         }
     }
 
@@ -176,20 +183,24 @@ object AlertRuntime {
     }
 
     private fun showActiveSosNotification(context: Context) {
-        val notifications = notificationManager(context)
-        notifications.createNotificationChannel(
+        notificationManager(context).notify(ACTIVE_SOS_NOTIFICATION_ID, activeSosNotification(context))
+    }
+
+    /** De blijvende SOS-melding; ook gebruikt door `SosLocationService` als voorgrondmelding. */
+    fun activeSosNotification(context: Context): Notification {
+        notificationManager(context).createNotificationChannel(
             NotificationChannel(ACTIVE_SOS_CHANNEL, "SOS actief", NotificationManager.IMPORTANCE_HIGH)
         )
         val openApp = PendingIntent.getActivity(context, 13, Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        notifications.notify(ACTIVE_SOS_NOTIFICATION_ID, Notification.Builder(context, ACTIVE_SOS_CHANNEL)
+        return Notification.Builder(context, ACTIVE_SOS_CHANNEL)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("SOS actief")
             .setContentText("SOS-modus is actief. Tik om e-SOS te openen.")
             .setContentIntent(openApp)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .build())
+            .build()
     }
 
     private fun fallback(context: Context) = PendingIntent.getBroadcast(context, 12,
@@ -227,6 +238,9 @@ object AlertRuntime {
             onAlertStarted = { enterSosPhase(context) },
             onSmsSent = {
                 saveSmsStatus(context, "SMS verstuurd naar ${dutchList(settings.contacts.map { it.name })}.")
+                coordinator?.takeIf { !it.locationIncluded }?.let {
+                    SosLocationService.startSearching(context, it.incidentId)
+                }
                 AlertAudioPlayer.enqueue(context, R.raw.sms_verstuurd)
             }
         )
