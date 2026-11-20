@@ -3,6 +3,7 @@ package org.esos.app
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -40,6 +41,13 @@ class CountdownActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(true)
         setTurnScreenOn(true)
+        if (savedInstanceState == null && intent?.action == ACTION_WIDGET_SOS &&
+            AlertRuntime.state() != AlertState.COUNTDOWN && !startFromWidget()) {
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            finish()
+            return
+        }
+        val askToSend = AlertRuntime.pendingReason(this) == AlertReason.SOS
         setContent {
             var remaining by remember { mutableIntStateOf(AlertRuntime.remainingSeconds()) }
             LaunchedEffect(Unit) {
@@ -51,6 +59,7 @@ class CountdownActivity : ComponentActivity() {
             }
             CountdownScreen(
                 remainingSeconds = remaining,
+                askToSend = askToSend,
                 onOk = {
                     AlertRuntime.cancel(this)
                     finish()
@@ -63,15 +72,29 @@ class CountdownActivity : ComponentActivity() {
         }
     }
 
+    /** Start de SOS vanaf de widget; bij een al actieve SOS of ontbrekende instellingen opent e-SOS zelf. */
+    private fun startFromWidget(): Boolean {
+        if (AppSettings(this).sosModeActive) return false
+        if (AlertRuntime.startFromWidget(this)) return true
+        if (AlertRuntime.state() != AlertState.SENT) {
+            Toast.makeText(this, "e-SOS kan nu niemand waarschuwen. Kijk bij Instellingen.", Toast.LENGTH_LONG).show()
+        }
+        return false
+    }
+
     companion object {
+        private const val ACTION_WIDGET_SOS = "org.esos.app.WIDGET_SOS"
+
         fun intent(context: Context): Intent = Intent(context, CountdownActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
+        fun widgetIntent(context: Context): Intent = intent(context).setAction(ACTION_WIDGET_SOS)
     }
 }
 
 @androidx.compose.runtime.Composable
-private fun CountdownScreen(remainingSeconds: Int, onOk: () -> Unit, onHelp: () -> Unit) {
+private fun CountdownScreen(remainingSeconds: Int, askToSend: Boolean, onOk: () -> Unit, onHelp: () -> Unit) {
     Column(
         Modifier.fillMaxSize().background(Color.White).windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(24.dp),
@@ -80,21 +103,21 @@ private fun CountdownScreen(remainingSeconds: Int, onOk: () -> Unit, onHelp: () 
     ) {
         // Ruimte bovenaan: een meldingsbanner mag de vraag niet bedekken.
         Spacer(Modifier.height(160.dp))
-        Text("Gaat het goed?", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Color.Black,
+        Text(if (askToSend) "SOS versturen?" else "Gaat het goed?", fontSize = 40.sp, fontWeight = FontWeight.Bold, color = Color.Black,
             textAlign = TextAlign.Center)
-        Text("Anders waarschuwt e-SOS over", fontSize = 22.sp, color = Color.Black, textAlign = TextAlign.Center)
+        Text(if (askToSend) "e-SOS waarschuwt over" else "Anders waarschuwt e-SOS over", fontSize = 22.sp, color = Color.Black, textAlign = TextAlign.Center)
         Text("$remainingSeconds", fontSize = 96.sp, fontWeight = FontWeight.Bold, color = Color(0xFFA8332A))
         Text("seconden je noodcontacten.", fontSize = 22.sp, color = Color.Black, textAlign = TextAlign.Center)
         Spacer(Modifier.weight(1f))
         Button(onClick = onOk, modifier = Modifier.fillMaxWidth().height(120.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B6E2E))) {
-            Text("Ja, alles goed", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Text(if (askToSend) "Nee, annuleren" else "Ja, alles goed", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         }
         Button(onClick = onHelp, modifier = Modifier.fillMaxWidth().height(120.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFA8332A))) {
-            Text("Nee, haal hulp", fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            Text(if (askToSend) "Ja, nu versturen" else "Nee, haal hulp", fontSize = 30.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

@@ -39,6 +39,24 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <receiver android:name=".SosWidgetSmall" android:exported="true" android:label="@string/widget_small_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_sos_small" />
+        </receiver>
+        <receiver android:name=".SosWidgetMedium" android:exported="true" android:label="@string/widget_medium_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_sos_medium" />
+        </receiver>
+        <receiver android:name=".SosWidgetLarge" android:exported="true" android:label="@string/widget_large_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_sos_large" />
+        </receiver>
         <receiver android:name=".CancelAlertReceiver" android:exported="false" />
         <receiver android:name=".AlarmDeadlineReceiver" android:exported="false" />
         <receiver android:name=".SosCallReceiver" android:exported="false">

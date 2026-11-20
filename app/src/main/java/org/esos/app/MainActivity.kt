@@ -178,6 +178,12 @@ class MainActivity : ComponentActivity() {
         SosCallScheduler.restore(this)
     }
 
+    override fun onPause() {
+        super.onPause()
+        // Contacten, acties of toestemmingen kunnen gewijzigd zijn: de widgetstatus volgt.
+        SosWidgets.update(this)
+    }
+
     @Composable
     private fun Home() {
         val settings = remember { AppSettings(this) }

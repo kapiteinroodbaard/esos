@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_sos">SOS</string>
+    <string name="widget_sos_hint">Tik voor hulp</string>
+    <string name="widget_status_preview">✓ Beschermd</string>
+    <string name="widget_contacts_preview">Waarschuwt je noodcontacten</string>
+    <string name="widget_small_label">SOS klein</string>
+    <string name="widget_medium_label">SOS middel</string>
+    <string name="widget_large_label">SOS groot</string>
+    <string name="widget_description">Tik op SOS: na 10 seconden aftellen worden je noodcontacten gewaarschuwd.</string>
+</resources>

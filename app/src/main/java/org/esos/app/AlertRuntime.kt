@@ -25,7 +25,16 @@ object AlertRuntime {
 
     fun startManual(context: Context, reason: AlertReason): Boolean = startInternal(context, reason, 0L)
 
-    private fun startInternal(context: Context, reason: AlertReason, countdownMillis: Long): Boolean {
+    /** SOS vanaf de widget: kort aftellen, zodat een onbedoelde tik nog te annuleren is. */
+    fun startFromWidget(context: Context): Boolean =
+        startInternal(context, AlertReason.SOS, SosWidgets.COUNTDOWN_MILLIS, showCountdownScreen = false)
+
+    /** De reden van het lopende alarm, zolang de countdown nog niet voorbij is. */
+    fun pendingReason(context: Context): AlertReason? = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        .getString("reason", null)?.let { runCatching { AlertReason.valueOf(it) }.getOrNull() }
+
+    private fun startInternal(context: Context, reason: AlertReason, countdownMillis: Long,
+                              showCountdownScreen: Boolean = true): Boolean {
         val app = context.applicationContext
         val settings = AppSettings(app)
         val sms = SmsAlertSender(app, settings)
@@ -52,7 +61,7 @@ object AlertRuntime {
             NotificationChannel(CHANNEL, "SOS-alarm", NotificationManager.IMPORTANCE_HIGH)
         )
         tick(app, alarm)
-        if (countdownMillis > 0L) runCatching { app.startActivity(CountdownActivity.intent(app)) }
+        if (countdownMillis > 0L && showCountdownScreen) runCatching { app.startActivity(CountdownActivity.intent(app)) }
         return true
     }
 
@@ -94,6 +103,7 @@ object AlertRuntime {
         coordinator?.reset()
         notificationManager(context).cancel(101)
         notificationManager(context).cancel(ACTIVE_SOS_NOTIFICATION_ID)
+        SosWidgets.update(context)
         return true
     }
 
@@ -158,6 +168,7 @@ object AlertRuntime {
     private fun enterSosPhase(context: Context) {
         context.getSharedPreferences(PROGRESS, Context.MODE_PRIVATE).edit().clear().commit()
         AppSettings(context).sosModeActive = true
+        SosWidgets.update(context)
         showActiveSosNotification(context)
         SosOverlay.start(context)
         AlertAudioPlayer.play(context, R.raw.noodprocedure_gestart)

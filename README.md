@@ -76,7 +76,16 @@ het eerste noodcontact, ook als SMS uit staat of mislukt. Daarna wordt elke
 15 minuten het volgende contact geprobeerd, eenmaal door de hele lijst heen.
 De volgorde wordt bij het starten van de belronde vastgelegd; wijzigingen gelden
 voor het volgende alarm. Er is bewust geen testmodus: test altijd het hele
-proces met een echt alarm. Bij een alarm klinkt na het aanbieden van de SMS aan alle contacten
+proces met een echt alarm.
+
+**SOS-widget.** Op het startscherm kun je een SOS-widget plaatsen in drie
+groottes: *SOS klein* (1×1, alleen de knop), *SOS middel* (2×2, knop met
+status) en *SOS groot* (4×2, knop, status en wie gewaarschuwd wordt). Een tik
+opent het scherm "SOS versturen?" met 10 s aftellen; "Nee, annuleren" stopt
+het, "Ja, nu versturen" of het einde van het aftellen start een echte SOS.
+Tijdens een actieve SOS opent een tik de app.
+
+Bij een alarm klinkt na het aanbieden van de SMS aan alle contacten
 de opname `7-sms-verstuurd.mp3`; dit bevestigt geen aflevering. Een mislukte
 SMS-aanbieding krijgt geen gesproken succesmelding. Voor het bellen klinkt
 `8-bellen-contact.mp3` volledig; daarna wordt het contact gebeld. Annuleren
