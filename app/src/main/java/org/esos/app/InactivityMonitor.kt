@@ -84,8 +84,7 @@ object InactivityMonitor {
     fun onMonitorStarted(context: Context) {
         val settings = AppSettings(context)
         if (!settings.inactivityEnabled) return
-        val isLocked = !context.getSystemService(PowerManager::class.java).isInteractive ||
-            context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        val isLocked = !inUse(context)
         if (isLocked && settings.inactivityLockedSince == 0L && !settings.inactivityTriggered) {
             settings.inactivityLockedSince = System.currentTimeMillis()
         } else if (!isLocked) {
@@ -93,6 +92,11 @@ object InactivityMonitor {
         }
         schedule(context)
     }
+
+    /** Scherm aan en niet vergrendeld: iemand gebruikt de telefoon. */
+    fun inUse(context: Context): Boolean =
+        context.getSystemService(PowerManager::class.java).isInteractive &&
+            !context.getSystemService(KeyguardManager::class.java).isKeyguardLocked
 
     fun onScreenOff(context: Context) {
         val settings = AppSettings(context)
@@ -137,6 +141,11 @@ object InactivityMonitor {
             schedule(context)
             return
         }
+        // Een gemiste ontgrendeling mag geen alarm geven terwijl de telefoon op dit moment gebruikt wordt.
+        if (inUse(context)) {
+            onUserPresent(context)
+            return
+        }
         settings.inactivityTriggered = true
         cancel(context)
         AlertRuntime.start(context, AlertReason.INACTIVITY)
@@ -165,6 +174,8 @@ class InactivityMonitorService : Service() {
             when (intent.action) {
                 Intent.ACTION_SCREEN_OFF -> InactivityMonitor.onScreenOff(context)
                 Intent.ACTION_USER_PRESENT -> InactivityMonitor.onUserPresent(context)
+                // Scherm weer aan binnen de vergrendelvertraging: geen vergrendelscherm, dus ook geen USER_PRESENT.
+                Intent.ACTION_SCREEN_ON -> if (InactivityMonitor.inUse(context)) InactivityMonitor.onUserPresent(context)
             }
         }
     }
@@ -189,9 +200,12 @@ class InactivityMonitorService : Service() {
         if (!receiverRegistered) {
             val filter = IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
                 addAction(Intent.ACTION_USER_PRESENT)
             }
-            registerReceiver(screenStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            // USER_PRESENT komt van SystemUI (een app-uid, niet het systeem): met RECEIVER_NOT_EXPORTED
+            // wordt ontgrendelen nooit gemeld. Beide acties zijn beschermd, dus andere apps kunnen ze niet sturen.
+            registerReceiver(screenStateReceiver, filter, Context.RECEIVER_EXPORTED)
             receiverRegistered = true
             InactivityMonitor.onMonitorStarted(this)
         }

@@ -165,7 +165,7 @@ object AlertRuntime {
             if (settings.callEnabled && !settings.smsEnabled && !PhoneCallAction.canStart(context, settings)) return
             val recovered = AlertCoordinator(senderFor(context, settings, sms), AndroidIncidentLocation(context, settings), System::currentTimeMillis)
             coordinator = recovered
-            recovered.start(reason, 0L)
+            recovered.start(reason, 0L, alertMessage(reason, settings.inactivityHours))
             recovered.tick()
             handler.postDelayed({ recovered.tick(); recovered.reset() }, 20_001L)
         }
