@@ -1,5 +1,10 @@
 package org.esos.app
 
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
 data class GpsFix(val latitude: Double, val longitude: Double, val accuracyMeters: Float, val timestampMillis: Long) {
     fun usable(now: Long) = accuracyMeters in 0f..100f && timestampMillis in (now - 30_000)..now
 }
@@ -45,12 +50,13 @@ class AlertCoordinator(
         private set
     private var fix: GpsFix? = null
     private var locationRequest: LocationRequest? = null
-    private var reason = AlertReason.SOS
+    private var message = alertMessage(AlertReason.SOS)
 
-    fun start(reason: AlertReason, countdownMillis: Long = reason.countdownMillis): Boolean {
+    fun start(reason: AlertReason, countdownMillis: Long = reason.countdownMillis,
+              message: String = alertMessage(reason)): Boolean {
         if (state == AlertState.COUNTDOWN || state == AlertState.SENT) return false
         incidentId++
-        this.reason = reason
+        this.message = message
         state = AlertState.COUNTDOWN
         deadline = now() + countdownMillis
         fix = null
@@ -94,17 +100,10 @@ class AlertCoordinator(
         if (state == AlertState.COUNTDOWN && time >= deadline) {
             state = AlertState.SENT
             locationRequest?.cancel()
-            val base = when (reason) {
-                AlertReason.SOS -> "SOS: ik heb mogelijk hulp nodig."
-                AlertReason.SPEECH_DETECTED -> "SOS: hulpzin herkend; ik heb mogelijk hulp nodig."
-                AlertReason.MISSED_CHECK_IN -> "SOS: geen dagelijkse bevestiging ontvangen."
-                AlertReason.INACTIVITY -> "SOS: telefoon niet ontgrendeld binnen de ingestelde tijd."
-                AlertReason.FALL -> "SOS: val gedetecteerd; mogelijk hulp nodig."
-            }
-            val gps = fix?.takeIf { it.usable(time) }?.let { " ${formatGpsFix(it)}" } ?: ""
+            val gps = fix?.takeIf { it.usable(time) }?.let { " ${locationText(it).replaceFirstChar(Char::uppercase)}" } ?: ""
             locationIncluded = gps.isNotEmpty()
             try {
-                sender.send(incidentId, base + gps)
+                sender.send(incidentId, message + gps)
             } catch (_: RuntimeException) {
                 state = AlertState.ERROR
             }
@@ -112,7 +111,26 @@ class AlertCoordinator(
     }
 }
 
-internal fun formatGpsFix(fix: GpsFix): String =
-    "GPS: ${fix.latitude},${fix.longitude} (nauwkeurigheid ${fix.accuracyMeters.toInt()} m, tijd ${fix.timestampMillis}); geo:${fix.latitude},${fix.longitude}"
+/** Eerste SMS-zin: dat er hulp nodig is en wat het alarm liet afgaan. */
+fun alertMessage(reason: AlertReason, inactivityHours: Int? = null): String {
+    val cause = when (reason) {
+        AlertReason.SOS -> "SOS-knop ingedrukt"
+        AlertReason.SPEECH_DETECTED -> "hulproep herkend"
+        AlertReason.MISSED_CHECK_IN -> "dagelijkse bevestiging niet ontvangen"
+        AlertReason.INACTIVITY -> inactivityHours?.let { "telefoon $it uur niet ontgrendeld" }
+            ?: "telefoon lange tijd niet ontgrendeld"
+        AlertReason.FALL -> "mogelijke val gedetecteerd"
+    }
+    return "SOS: ik heb mogelijk hulp nodig. Reden: $cause."
+}
 
-internal fun locationSupplement(fix: GpsFix): String = "Aanvulling op alarm: ${formatGpsFix(fix)}"
+/** "locatie om 14:32: <kaartlink>"; een gewone https-link is in elke sms-app aan te tikken. */
+internal fun locationText(fix: GpsFix, zone: ZoneId = ZoneId.systemDefault()): String {
+    val time = Instant.ofEpochMilli(fix.timestampMillis).atZone(zone).format(DateTimeFormatter.ofPattern("HH:mm"))
+    val lat = String.format(Locale.ROOT, "%.5f", fix.latitude)
+    val lon = String.format(Locale.ROOT, "%.5f", fix.longitude)
+    return "locatie om $time: https://www.openstreetmap.org/?mlat=$lat&mlon=$lon&zoom=18"
+}
+
+internal fun locationSupplement(fix: GpsFix, zone: ZoneId = ZoneId.systemDefault()): String =
+    "Aanvulling op alarm: ${locationText(fix, zone)}"

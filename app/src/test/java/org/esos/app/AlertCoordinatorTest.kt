@@ -54,7 +54,7 @@ class AlertCoordinatorTest {
         time += 5_000L
         coordinator.triggerNow()
         assertEquals(AlertState.SENT, coordinator.state)
-        assertEquals(listOf("SOS: val gedetecteerd; mogelijk hulp nodig."), messages)
+        assertEquals(listOf("SOS: ik heb mogelijk hulp nodig. Reden: mogelijke val gedetecteerd."), messages)
         coordinator.triggerNow()
         assertEquals(1, messages.size)
     }
@@ -76,16 +76,23 @@ class AlertCoordinatorTest {
         time += 60_000
         coordinator.tick()
         assertEquals(1, messages.size)
-        assertFalse(messages[0].contains("GPS:"))
+        assertFalse(messages[0].contains("Locatie"))
         assertFalse(coordinator.locationIncluded)
         callback!!(GpsFix(51.0, 4.0, 20f, time))
         assertEquals(1, messages.size)
     }
 
-    @Test fun locationSupplementNamesTheFix() {
-        val text = locationSupplement(GpsFix(51.0, 4.0, 12.7f, 5L))
-        assertTrue(text.startsWith("Aanvulling op alarm: GPS: 51.0,4.0 (nauwkeurigheid 12 m"))
-        assertTrue(text.endsWith("geo:51.0,4.0"))
+    @Test fun locationSupplementShowsTimeAndMapLink() {
+        val fix = GpsFix(51.0, 4.123456, 12.7f, java.time.Instant.parse("2026-11-21T13:32:10Z").toEpochMilli())
+        assertEquals("Aanvulling op alarm: locatie om 14:32: https://www.openstreetmap.org/?mlat=51.00000&mlon=4.12346&zoom=18",
+            locationSupplement(fix, java.time.ZoneId.of("Europe/Amsterdam")))
+    }
+
+    @Test fun alertMessageNamesTheTrigger() {
+        assertEquals("SOS: ik heb mogelijk hulp nodig. Reden: SOS-knop ingedrukt.", alertMessage(AlertReason.SOS))
+        assertEquals("SOS: ik heb mogelijk hulp nodig. Reden: telefoon 24 uur niet ontgrendeld.",
+            alertMessage(AlertReason.INACTIVITY, 24))
+        assertTrue(alertMessage(AlertReason.SPEECH_DETECTED).endsWith("Reden: hulproep herkend."))
     }
 
     @Test fun cancelledAlarmNeverSends() {
@@ -104,7 +111,7 @@ class AlertCoordinatorTest {
         time += 10_000
         coordinator.tick()
         assertEquals(1, messages.size)
-        assertFalse(messages.single().contains("GPS:"))
+        assertFalse(messages.single().contains("Locatie"))
         assertFalse(coordinator.locationIncluded)
     }
 
@@ -115,9 +122,8 @@ class AlertCoordinatorTest {
         time += 10_000
         coordinator.tick()
         assertEquals(1, messages.size)
-        assertTrue(messages.single().contains("52.0,5.0"))
-        assertTrue(messages.single().contains("geo:52.0,5.0"))
-        assertFalse(messages.single().contains("maps.google.com"))
+        assertTrue(messages.single().contains(". Locatie om "))
+        assertTrue(messages.single().endsWith("openstreetmap.org/?mlat=52.00000&mlon=5.00000&zoom=18"))
         assertTrue(coordinator.locationIncluded)
         callback!!(GpsFix(53.0, 6.0, 20f, time))
         assertEquals(1, messages.size)
@@ -135,6 +141,6 @@ class AlertCoordinatorTest {
         time += 60_000
         fallback.tick()
         assertEquals(1, messages.size)
-        assertTrue(messages.single().contains("geen dagelijkse bevestiging"))
+        assertTrue(messages.single().contains("dagelijkse bevestiging niet ontvangen"))
     }
 }

@@ -47,7 +47,7 @@ object AlertRuntime {
         coordinator?.reset()
         val alarm = AlertCoordinator(sender, AndroidIncidentLocation(app, settings), System::currentTimeMillis)
         coordinator = alarm
-        if (!alarm.start(reason, countdownMillis)) return false
+        if (!alarm.start(reason, countdownMillis, alertMessage(reason, settings.inactivityHours))) return false
         CountdownBeeper.stop()
         SosSignals.announce(app)
         if (countdownMillis > 0L) {

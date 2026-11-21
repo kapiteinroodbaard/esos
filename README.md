@@ -148,7 +148,10 @@ Alleen een recente GPS-fix (maximaal 30 s oud, maximaal 100 m nauwkeurigheid) ka
 worden meegestuurd. Een eerste SMS wacht niet op GPS. Ging die zonder locatie de
 deur uit, dan blijft e-SOS zolang de SOS actief is naar een fix zoeken, ook als
 systeemlocatie/GPS pas later wordt aangezet, en stuurt de eerste geschikte fix
-eenmaal na als "Aanvulling op alarm". Het Start-tabblad toont "Locatie wordt nog
+eenmaal na als "Aanvulling op alarm". De locatie staat in de SMS als tijdstip plus
+een OpenStreetMap-link ("Locatie om 14:32: https://www.openstreetmap.org/?mlat=…").
+De eerste SMS noemt ook de reden, bijvoorbeeld "Reden: SOS-knop ingedrukt." of
+"Reden: telefoon 24 uur niet ontgrendeld.". Het Start-tabblad toont "Locatie wordt nog
 gezocht." of "Locatie nagestuurd.". Binnenshuis is een fix vaak onmogelijk; toestemming weigeren
 mag de basis-SMS niet blokkeren.
 
